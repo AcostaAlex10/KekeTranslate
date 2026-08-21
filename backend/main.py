@@ -181,7 +181,7 @@ async def get_transcript(job_id: str, store: JobStore = Depends(get_store)) -> s
     return transcript
 
 
-@app.delete("/api/jobs/{job_id}", status_code=204)
+@app.delete("/api/jobs/{job_id}", status_code=204, response_model=None)
 async def delete_job(
     job_id: str,
     settings: Settings = Depends(get_settings),
