@@ -1,0 +1,22 @@
+# Entorno
+.env
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Datos de la aplicacion: audios subidos, transcripciones y apuntes
+storage/
+*.db
+*.sqlite3
+
+# Sistema / editor
+.DS_Store
+.idea/
+.vscode/
