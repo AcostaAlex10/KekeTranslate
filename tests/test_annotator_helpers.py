@@ -1,6 +1,6 @@
 """Tests de los auxiliares del anotador (troceado y limpieza de la salida)."""
 
-from backend.annotator.claude import (
+from backend.annotator.base import (
     _format_duration,
     _split_on_line_boundaries,
     _strip_code_fence,

@@ -106,15 +106,42 @@ A continuacion tienes la transcripcion completa de una clase.
 - Duracion: {duration}
 - Oradores detectados: {speakers}
 - Fecha de procesado: {processed_at}
-
+{materia}
 {output_template}
-
+{material}
 ---
 
 TRANSCRIPCION:
 
 {transcript}\
 """
+
+# Bloque que se inserta cuando el grupo tiene PDFs adjuntos. Va antes de la
+# transcripcion para que el modelo lea primero el marco (que materia es, que
+# dice el programa) y despues la clase concreta.
+MATERIAL_TEMPLATE = """\
+
+---
+
+MATERIAL DE LA MATERIA
+
+Estos documentos los subio el estudiante y son el contexto de la asignatura: \
+programa, apuntes del docente o guias de ejercicios. Usalos para:
+
+- Situar la clase dentro del programa (que unidad o tema se esta cubriendo).
+- Emplear la misma terminologia y notacion que usa la catedra.
+- Relacionar lo explicado con los ejercicios de la guia cuando encaje.
+
+Dos advertencias. El material es apoyo, **no** fuente: los apuntes tienen que \
+salir de lo que se dijo en clase, y no debes anadir contenido del programa que \
+el docente no llego a explicar. Y si algo de la clase contradice al material, \
+manda la clase: el documento puede estar desactualizado.
+
+{documentos}\
+"""
+
+# Linea que identifica la materia cuando la clase pertenece a un grupo.
+MATERIA_TEMPLATE = "- Materia: {materia}{tema}\n"
 
 
 # ---------------------------------------------------------------------------
@@ -162,9 +189,9 @@ conserva todo el detalle academico y las marcas de tiempo.
 - Duracion: {duration}
 - Oradores detectados: {speakers}
 - Fecha de procesado: {processed_at}
-
+{materia}
 {output_template}
-
+{material}
 ---
 
 EXTRACTOS DE TRABAJO:

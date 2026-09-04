@@ -2,18 +2,23 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-multipart==0.0.20
-pydantic==2.10.5
+pydantic==2.13.5            # 2.13 es la que exige google-genai
 pydantic-settings==2.7.1
 httpx==0.28.1
 aiofiles==24.1.0
 
 # --- Proveedores de IA ---
 anthropic>=1.0.0            # Anotador IA (Claude)
+google-genai>=2.20.0        # Anotador IA (Gemini): alternativa con nivel gratuito
+
+# --- Material de la biblioteca ---
+pypdf>=5.1                  # Extraer el texto de los PDF para que la IA los lea
 
 # --- Frontend ---
 streamlit==1.41.1
 
 # --- Utilidades / tests ---
 python-dotenv==1.0.1
+truststore>=0.10            # Confiar en los certificados del sistema (antivirus/proxy)
 pytest==8.3.4
 pytest-asyncio==0.25.2
