@@ -103,6 +103,37 @@ que manda a reintentar en bucle sin éxito. Ahora el mensaje nombra la cuota y
 apunta al botón de reintento. Más tarde el mismo día la cuota se recuperó y la
 generación completa funcionó.
 
+### Las claves `AQ.` de AI Studio no sirven para esta API (04/09/2026)
+
+Al rotar las claves, la nueva de Gemini empezaba por `AQ.` y medía 53
+caracteres. La API la rechaza así:
+
+```
+401 UNAUTHENTICATED — ACCESS_TOKEN_TYPE_UNSUPPORTED
+Request had invalid authentication credentials. Expected OAuth 2 access token,
+login cookie or other valid authentication credential.
+```
+
+No es un error de configuración de esta app ni un pegado a medias: **es un
+problema conocido y abierto de Google**. Hay cuentas a las que AI Studio solo
+les emite claves con prefijo `AQ.`, y `generativelanguage.googleapis.com` solo
+acepta las del formato antiguo, `AIza…` de unos 39 caracteres. Hay hilos en el
+foro oficial desde junio de 2026 pidiendo que lo arreglen.
+
+**Qué hacer si aparece.** Por orden de menos a más trabajo:
+
+1. Crear la clave desde la **consola de Google Cloud** en vez de desde AI
+   Studio: activar la *Generative Language API* en un proyecto y crear ahí una
+   clave de API. Esa vía suele seguir dando el formato `AIza…`.
+2. Probar con otra cuenta de Google, porque la restricción es por cuenta.
+3. Cambiar de anotador a Claude, que la app ya soporta:
+   `python run.py --configurar --avanzado`. Es de pago, pero no tiene el
+   problema.
+
+**Cómo reconocerlo rápido:** una clave de Gemini válida empieza por `AIza` y
+mide unos 39 caracteres. Si empieza por `AQ.`, no va a funcionar por mucho que
+se pegue bien.
+
 ### Lo que NO está probado
 
 - El anotador de **Claude** con llamadas reales (sí el de Gemini).
