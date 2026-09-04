@@ -28,6 +28,24 @@ API_BASE = "https://api.assemblyai.com/v2"
 # permite subir ficheros de varios GB sin cargarlos en memoria.
 UPLOAD_CHUNK_BYTES = 5 * 1024 * 1024
 
+# Modelos de reconocimiento, por orden de preferencia. AssemblyAI usa el
+# primero que cubra el idioma del audio. Se declara aqui, y no en el `.env`,
+# porque es un detalle de la API del proveedor y no algo que el usuario deba
+# decidir.
+SPEECH_MODELS = ("universal-3-5-pro", "universal-2")
+
+# Duracion maxima de una intervencion antes de partirla, en milisegundos.
+# AssemblyAI solo corta `utterances` cuando cambia de orador, de modo que una
+# clase con un unico profesor vuelve como un bloque continuo: todas las marcas
+# de tiempo de los apuntes acabarian siendo [00:00:00] y el troceador del
+# anotador se quedaria sin puntos por donde cortar. Partir cada ~40 s da una
+# referencia con la que volver al minuto exacto de la grabacion.
+MAX_UTTERANCE_MS = 40_000
+
+# Signos con los que se considera terminada una frase. Se corta ahi para no
+# partir una idea por la mitad.
+FIN_DE_FRASE = (".", "?", "!", "…")
+
 
 class AssemblyAIProvider(TranscriptionProvider):
     """Cliente asincrono del endpoint de transcripcion pre-grabada."""
@@ -119,7 +137,11 @@ class AssemblyAIProvider(TranscriptionProvider):
         """Crea el trabajo de transcripcion y devuelve su id."""
         body: dict[str, object] = {
             "audio_url": audio_url,
-            "speech_model": "universal",
+            # `speech_model` (singular) quedo obsoleto y la API lo rechaza con
+            # un 400. El parametro actual es una lista por orden de
+            # preferencia: si el primero no cubre el idioma detectado, se
+            # recurre al siguiente.
+            "speech_models": list(SPEECH_MODELS),
             "punctuate": True,
             "format_text": True,
             "speaker_labels": diarize,
@@ -186,14 +208,10 @@ class AssemblyAIProvider(TranscriptionProvider):
     def _to_result(self, payload: dict) -> TranscriptionResult:
         """Normaliza la respuesta de AssemblyAI al modelo interno."""
         utterances = [
-            Utterance(
-                speaker=f"Orador {item['speaker']}",
-                start_ms=int(item.get("start", 0)),
-                end_ms=int(item.get("end", 0)),
-                text=(item.get("text") or "").strip(),
-            )
+            trozo
             for item in (payload.get("utterances") or [])
             if (item.get("text") or "").strip()
+            for trozo in _partir_intervencion(item)
         ]
 
         duration = payload.get("audio_duration")
@@ -205,3 +223,57 @@ class AssemblyAIProvider(TranscriptionProvider):
             language_code=payload.get("language_code"),
             provider_job_id=payload.get("id"),
         )
+
+
+def _partir_intervencion(item: dict) -> list[Utterance]:
+    """Parte una intervencion larga en trozos con marca de tiempo propia.
+
+    AssemblyAI devuelve las palabras con sus tiempos dentro de cada
+    intervencion, asi que los cortes llevan tiempos reales, no estimados. Se
+    corta al final de una frase; si el orador encadena sin puntuacion, se
+    fuerza el corte al doble del limite para que un bloque no crezca sin fin.
+    """
+    orador = f"Orador {item.get('speaker', '?')}"
+    palabras = [p for p in (item.get("words") or []) if (p.get("text") or "").strip()]
+
+    duracion = int(item.get("end", 0)) - int(item.get("start", 0))
+    if not palabras or duracion <= MAX_UTTERANCE_MS:
+        texto = (item.get("text") or "").strip()
+        if not texto:
+            return []
+        return [
+            Utterance(
+                speaker=orador,
+                start_ms=int(item.get("start", 0)),
+                end_ms=int(item.get("end", 0)),
+                text=texto,
+            )
+        ]
+
+    trozos: list[Utterance] = []
+    acumuladas: list[dict] = []
+
+    def cerrar_trozo() -> None:
+        if not acumuladas:
+            return
+        trozos.append(
+            Utterance(
+                speaker=orador,
+                start_ms=int(acumuladas[0].get("start", 0)),
+                end_ms=int(acumuladas[-1].get("end", 0)),
+                text=" ".join((p.get("text") or "").strip() for p in acumuladas),
+            )
+        )
+        acumuladas.clear()
+
+    for palabra in palabras:
+        acumuladas.append(palabra)
+        transcurrido = int(palabra.get("end", 0)) - int(acumuladas[0].get("start", 0))
+        if transcurrido < MAX_UTTERANCE_MS:
+            continue
+        termina_frase = (palabra.get("text") or "").rstrip().endswith(FIN_DE_FRASE)
+        if termina_frase or transcurrido >= 2 * MAX_UTTERANCE_MS:
+            cerrar_trozo()
+
+    cerrar_trozo()
+    return trozos
