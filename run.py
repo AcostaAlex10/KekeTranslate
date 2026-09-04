@@ -22,11 +22,6 @@ import webbrowser
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent
-# Por debajo de esto no hay clave de ningun proveedor conocido: la de Gemini
-# ronda los 39 caracteres y la de AssemblyAI los 32. Sirve para cazar un pegado
-# que no entro, que es el fallo mas caro porque se descubre tardisimo.
-LARGO_MINIMO_DE_CLAVE = 20
-
 PUERTO_BACKEND = 8000
 PUERTO_FRONTEND = 8501
 
@@ -230,6 +225,13 @@ def _preguntar_opcion(titulo: str, opciones: dict[str, str], actual: str) -> str
         piso("   Escribe solo el numero de una de las opciones.")
 
 
+def clave_completa(valor: str) -> bool:
+    """El mismo criterio que usa el backend, sin duplicar el numero."""
+    from backend.config import clave_completa as _comprobar
+
+    return _comprobar(valor)
+
+
 def _pedir_clave(nombre: str, estado: str, *, visible: bool) -> str:
     """Pide una clave y avisa si lo que llego no tiene pinta de serlo.
 
@@ -243,7 +245,7 @@ def _pedir_clave(nombre: str, estado: str, *, visible: bool) -> str:
     leer = input if visible else getpass
     while True:
         valor = leer(f"   {nombre} ({estado}): ").strip()
-        if not valor or len(valor) >= LARGO_MINIMO_DE_CLAVE:
+        if not valor or clave_completa(valor):
             return valor
         piso(f"   [!] Eso son {len(valor)} caracteres: no parece una clave entera.")
         piso("       Si al pegar no ves nada y sospechas que no entro, corta con")
@@ -314,7 +316,7 @@ def configurar(avanzado: bool = False, visible: bool = False) -> int:
         # despues y disfrazado de error del proveedor.
         if not guardada:
             estado = "SIGUE VACIA"
-        elif len(guardada) < LARGO_MINIMO_DE_CLAVE:
+        elif not clave_completa(guardada):
             estado = f"SOSPECHOSA: solo {len(guardada)} caracteres, no parece una clave"
         else:
             estado = f"OK ({len(guardada)} caracteres, ...{guardada[-4:]})"

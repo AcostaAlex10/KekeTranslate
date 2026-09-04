@@ -53,3 +53,24 @@ def test_un_numero_invalido_sigue_siendo_un_error(monkeypatch):
     """Vaciar es 'no configurado'; escribir cualquier cosa sigue siendo un fallo."""
     with pytest.raises(Exception):
         _ajustes(monkeypatch, EXPECTED_SPEAKERS="dos")
+
+
+# ---------------------------------------------------------------------------
+# Una clave a medias no cuenta como configurada
+# ---------------------------------------------------------------------------
+
+
+def test_una_clave_a_medias_no_cuenta_como_configurada():
+    """Comprobar solo que no este vacia daba por buena una clave de un caracter.
+
+    Paso de verdad al rotar las claves: el pegado no entro, `/api/health` dijo
+    que todo estaba bien, la interfaz pinto su tick verde, y el fallo aparecio
+    mucho despues disfrazado de error del proveedor.
+    """
+    from backend.config import clave_completa
+
+    assert not clave_completa("")
+    assert not clave_completa("A")
+    assert not clave_completa("   ")
+    assert not clave_completa("demasiado-corta")
+    assert clave_completa("AIzaSyD" + "x" * 32)

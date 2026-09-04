@@ -41,8 +41,8 @@ class _Anotador:
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("STORAGE_DIR", str(tmp_path))
-    monkeypatch.setenv("GEMINI_API_KEY", "clave-de-prueba")
-    monkeypatch.setenv("ASSEMBLYAI_API_KEY", "clave-de-prueba")
+    monkeypatch.setenv("GEMINI_API_KEY", "clave-de-prueba-con-largo-realista")
+    monkeypatch.setenv("ASSEMBLYAI_API_KEY", "clave-de-prueba-con-largo-realista")
 
     from backend.config import get_settings
 

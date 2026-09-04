@@ -898,12 +898,14 @@ elif faltan_claves:
     if not salud["transcription_key_configured"]:
         st.error(
             f"Falta la clave de `{salud['transcription_provider']}` en el "
-            ".env: sin ella no se puede transcribir ninguna clase."
+            ".env, o la que hay no está completa: sin ella no se puede "
+            "transcribir ninguna clase."
         )
     if not salud.get("annotator_key_configured", True):
         st.error(
             f"Falta la clave de `{salud.get('annotator_provider', 'anotador')}` "
-            "en el .env: las clases se transcribirán, pero no habrá apuntes."
+            "en el .env, o la que hay no está completa: las clases se "
+            "transcribirán, pero no habrá apuntes."
         )
 
 # El nombre y no el correo: Streamlit convierte un correo en un enlace `mailto`

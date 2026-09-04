@@ -159,6 +159,24 @@ class Settings(BaseSettings):
         self.materiales_dir.mkdir(parents=True, exist_ok=True)
 
 
+# Por debajo de esto no hay clave de ningun proveedor conocido: la de Gemini
+# ronda los 39 caracteres y la de AssemblyAI los 32. Sirve para cazar un pegado
+# que no entro entero, que es el fallo mas caro porque se descubre tardisimo y
+# disfrazado de error del proveedor.
+LARGO_MINIMO_DE_CLAVE = 20
+
+
+def clave_completa(valor: str) -> bool:
+    """Dice si una clave tiene pinta de estar entera.
+
+    No comprueba que sea valida —eso solo lo sabe el proveedor— sino que haya
+    algo con forma de clave. Comprobar solo que no este vacia daba por buena una
+    clave de un caracter y anunciaba "todo listo" hasta que fallaba la primera
+    clase.
+    """
+    return len(valor.strip()) >= LARGO_MINIMO_DE_CLAVE
+
+
 @lru_cache
 def get_settings() -> Settings:
     """Devuelve los ajustes (cacheados: se leen del entorno una sola vez)."""

@@ -103,7 +103,7 @@ def entorno(tmp_path, monkeypatch):
     Devuelve una funcion `ejecutar(proveedor, anotador)` que monta los dobles y
     procesa el trabajo, para que cada test solo declare que quiere romper.
     """
-    settings = Settings(storage_dir=tmp_path, anthropic_api_key="clave-de-prueba")
+    settings = Settings(storage_dir=tmp_path, anthropic_api_key="clave-de-prueba-con-largo-realista")
     settings.ensure_dirs()
     store = JobStore(settings.db_path)
 

@@ -40,7 +40,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 
 from .annotator import clave_del_anotador, modelo_del_anotador
 from .biblioteca import Biblioteca
-from .config import Settings, get_settings
+from .config import Settings, clave_completa, get_settings
 from .models import (
     Grupo,
     Job,
@@ -194,8 +194,8 @@ async def health(settings: Settings = Depends(get_settings)) -> dict:
         "max_upload_mb": settings.max_upload_mb,
         "max_material_mb": settings.max_material_mb,
         # Se informa de si faltan claves sin exponer su valor.
-        "transcription_key_configured": bool(_provider_key(settings)),
-        "annotator_key_configured": bool(clave_del_anotador(settings)),
+        "transcription_key_configured": clave_completa(_provider_key(settings)),
+        "annotator_key_configured": clave_completa(clave_del_anotador(settings)),
     }
 
 

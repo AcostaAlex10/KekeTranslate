@@ -5,7 +5,7 @@ from backend.transcription.deepgram import DeepgramProvider, _group_words_by_spe
 
 
 def test_assemblyai_normaliza_utterances():
-    provider = AssemblyAIProvider(api_key="clave-de-prueba")
+    provider = AssemblyAIProvider(api_key="clave-de-prueba-con-largo-realista")
     payload = {
         "id": "abc123",
         "status": "completed",
@@ -47,7 +47,7 @@ def test_deepgram_agrupa_palabras_consecutivas_del_mismo_orador():
 
 
 def test_deepgram_prefiere_el_array_de_utterances():
-    provider = DeepgramProvider(api_key="clave-de-prueba")
+    provider = DeepgramProvider(api_key="clave-de-prueba-con-largo-realista")
     payload = {
         "metadata": {"duration": 120.0, "request_id": "req-1"},
         "results": {
