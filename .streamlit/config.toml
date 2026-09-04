@@ -1,0 +1,48 @@
+[server]
+# Tope de subida en MB. Streamlit bufferea el fichero en memoria mientras lo
+# recibe, asi que este numero es tambien el pico de RAM por subida simultanea:
+# por eso no se iguala a los 5 GB que acepta el backend.
+maxUploadSize = 1024
+
+# Por defecto la app escucha solo en esta maquina y sin HTTPS: en `localhost`
+# el navegador ya considera la pagina segura y da acceso al microfono, asi que
+# se puede grabar y probar sin certificados ni configuracion.
+# Para entrar desde el movil hace falta HTTPS; ver docs/movil.md.
+address = "localhost"
+port = 8501
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+# Paleta propia en vez de la de serie. El fondo es un azul muy oscuro en lugar
+# del gris neutro: la app se usa en clase y de noche, y un fondo frio cansa
+# menos que el negro puro.
+base = "dark"
+backgroundColor = "#12141C"
+secondaryBackgroundColor = "#1B1E29"
+textColor = "#E6E8EF"
+
+# El color de accion tiene que cumplir dos cosas a la vez, y la ventana que
+# queda entre ambas es estrecha:
+#
+#   * Streamlit pinta el texto de los botones primarios en blanco y no deja
+#     cambiarlo, asi que el acento debe ser oscuro para que se lea encima
+#     (>= 4.5:1). El ambar anterior, #E8A33D, daba 2.16:1: ilegible.
+#   * El mismo acento marca la opcion elegida de un radio y subraya la pestana
+#     activa, sobre este lienzo casi negro, asi que debe ser claro para verse
+#     (>= 3:1 contra el fondo).
+#
+# En luminancia relativa eso deja solo la banda 0.121 - 0.183. Este azul mide
+# 5.39:1 con el blanco y 3.41:1 con el lienzo, con margen en los dos lados.
+#
+# El tono se eligio por significado, no por gusto: verde, rojo y ambar ya
+# comunican estado en esta app (clase lista, clase fallida, aviso). La accion
+# necesitaba un color que no se confunda con ninguno de los tres, y de paso el
+# ambar vuelve a estar libre para lo que siempre significo: atencion.
+primaryColor = "#1F6FA8"
+
+# Sans para toda la interfaz. Se probo serif para la prosa de los apuntes y se
+# descarto: Streamlit no permite acotarlo a ese bloque sin depender de las
+# clases internas de su DOM, y aplicarlo a todo envejece los controles.
+font = "sans-serif"
