@@ -9,16 +9,43 @@ from __future__ import annotations
 
 import logging
 
-from .annotator import AnnotationError, ClaudeAnnotator
+from .annotator import AnnotationError, get_annotator
+from .biblioteca import Biblioteca
 from .config import Settings
-from .models import JobStatus, TranscriptionResult
+from .models import ContextoMateria, Job, JobStatus, TranscriptionResult
 from .store import JobStore
 from .transcription import TranscriptionError, get_provider
 
 logger = logging.getLogger(__name__)
 
 
-async def run_job(job_id: str, settings: Settings, store: JobStore) -> None:
+def contexto_del_job(job: Job, biblioteca: Biblioteca | None) -> ContextoMateria | None:
+    """Reune la materia y el material del grupo donde esta archivada la clase.
+
+    Devuelve `None` si la clase no pertenece a ningun grupo: entonces se anota
+    igual que siempre, sin contexto adicional.
+    """
+    if biblioteca is None or not job.grupo_id:
+        return None
+
+    grupo = biblioteca.grupo(job.grupo_id)
+    if grupo is None:
+        return None
+
+    tema = biblioteca.tema(job.tema_id) if job.tema_id else None
+    return ContextoMateria(
+        materia=grupo.materia or grupo.nombre,
+        tema=tema.nombre if tema else "",
+        materiales=biblioteca.listar_materiales(grupo.id, tema_id=job.tema_id),
+    )
+
+
+async def run_job(
+    job_id: str,
+    settings: Settings,
+    store: JobStore,
+    biblioteca: Biblioteca | None = None,
+) -> None:
     """Procesa un trabajo de principio a fin, registrando su avance.
 
     Nunca propaga excepciones: cualquier fallo se guarda en el trabajo con
@@ -76,8 +103,12 @@ async def run_job(job_id: str, settings: Settings, store: JobStore) -> None:
         )
 
         # --- 2. Anotacion IA --------------------------------------------
-        annotator = ClaudeAnnotator(settings)
-        notes = await annotator.annotate(transcription, filename=job.filename)
+        annotator = get_annotator(settings)
+        notes = await annotator.annotate(
+            transcription,
+            filename=job.filename,
+            contexto=contexto_del_job(job, biblioteca),
+        )
 
         notes_path = settings.results_dir / f"{job_id}_apuntes.md"
         notes_path.write_text(notes, encoding="utf-8")
@@ -100,6 +131,68 @@ async def run_job(job_id: str, settings: Settings, store: JobStore) -> None:
         current = store.get(job_id)
         if current and current.status == JobStatus.COMPLETED:
             audio_path.unlink(missing_ok=True)
+
+
+async def reanotar_job(
+    job_id: str,
+    settings: Settings,
+    store: JobStore,
+    biblioteca: Biblioteca | None = None,
+) -> None:
+    """Vuelve a generar los apuntes de un trabajo ya transcrito.
+
+    La transcripcion es la parte cara y lenta del proceso: se paga por minuto
+    de audio y tarda mas que todo lo demas junto. Cuando lo unico que falla es
+    el modelo que redacta los apuntes —que se cae, se satura o agota su cuota
+    gratuita—, tirar la transcripcion y pedirle al usuario que vuelva a subir
+    la clase entera es inaceptable. Esta funcion reanuda desde donde quedo.
+    """
+    job = store.get(job_id)
+    if job is None:
+        logger.error("El trabajo %s no existe", job_id)
+        return
+
+    transcripcion = job.transcript_diarized or job.transcript_text
+    if not transcripcion:
+        store.set_status(
+            job_id,
+            JobStatus.FAILED,
+            error="No hay transcripcion guardada: hay que subir el audio otra vez.",
+        )
+        return
+
+    store.update(job_id, status=JobStatus.ANNOTATING, error=None)
+
+    try:
+        resultado = TranscriptionResult(
+            provider=job.provider or "desconocido",
+            text=job.transcript_text or transcripcion,
+            diarized_text=job.transcript_diarized,
+            speaker_names=job.speakers,
+            audio_duration_seconds=job.audio_duration_seconds,
+            provider_job_id=job.provider_job_id,
+        )
+
+        annotator = get_annotator(settings)
+        notes = await annotator.annotate(
+            resultado,
+            filename=job.filename,
+            contexto=contexto_del_job(job, biblioteca),
+        )
+
+        notes_path = settings.results_dir / f"{job_id}_apuntes.md"
+        notes_path.write_text(notes, encoding="utf-8")
+
+        store.update(job_id, status=JobStatus.COMPLETED, notes_markdown=notes)
+        logger.info("[%s] Apuntes regenerados", job_id)
+
+    except AnnotationError as exc:
+        logger.error("[%s] %s", job_id, exc)
+        store.set_status(job_id, JobStatus.FAILED, error=str(exc))
+
+    except Exception as exc:  # noqa: BLE001 - nada debe dejar el job colgado
+        logger.exception("[%s] Fallo inesperado al reanotar", job_id)
+        store.set_status(job_id, JobStatus.FAILED, error=f"Fallo inesperado: {exc}")
 
 
 def _persist_transcript(
