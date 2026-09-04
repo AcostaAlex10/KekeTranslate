@@ -41,11 +41,16 @@ contexto de **1 millón de tokens** es la razón: la transcripción de una clase
 puede relacionar algo que se dijo en el minuto 12 con lo que se retomó en el
 minuto 200. Esa visión global es justo lo que un enfoque troceado pierde.
 
+**Por defecto se usa Google Gemini**, no Claude, por un motivo práctico:
+Anthropic no tiene nivel gratuito y Gemini sí, con la misma ventana de 1M de
+contexto. Así, quien clone el repositorio puede generar apuntes sin poner
+dinero. Con `ANNOTATOR_PROVIDER=anthropic` se cambia a Claude.
+
 | Capa | Tecnología | Motivo |
 |---|---|---|
 | Backend | Python 3.11 + FastAPI | Subidas en streaming a disco y trabajos en segundo plano |
 | Transcripción | AssemblyAI · Deepgram · OpenAI | Intercambiables desde el `.env` |
-| Anotador IA | Claude Opus 5 | 1M de contexto, *adaptive thinking*, streaming y *prompt caching* |
+| Anotador IA | Claude Opus 5 · Gemini | 1M de contexto en ambos; Gemini es la opción con nivel gratuito |
 | Frontend | Streamlit | Interfaz de subida y lectura sin paso de compilación |
 | Estado | SQLite | Un trabajo de 4 h sobrevive a un reinicio del servidor |
 
@@ -89,18 +94,24 @@ KekeTranslate/
 │   │   ├── deepgram.py            # nova-3 con diarización
 │   │   ├── whisper_openai.py      # Segmentado con ffmpeg (tope de 25 MB)
 │   │   └── factory.py
+│   ├── tls.py                     # Confiar en los certificados del sistema
 │   └── annotator/
-│       ├── claude.py              # Streaming, caching, map-reduce de respaldo
+│       ├── base.py                # Lógica común: troceado, metadatos, map-reduce
+│       ├── claude.py              # Streaming, caching, adaptive thinking
+│       ├── gemini.py              # Alternativa con nivel gratuito
+│       ├── factory.py
 │       └── prompts.py             # Prompts del formato estilo Notion
 ├── frontend/app.py                # Interfaz Streamlit
-└── tests/                         # 24 tests, sin llamadas a APIs externas
+├── run.py                         # Arranca backend + frontend con un comando
+├── iniciar.bat                    # Lo mismo, con doble clic en Windows
+└── tests/                         # 71 tests, sin llamadas a APIs externas
 ```
 
 ---
 
 ## Instalación
 
-**Requisitos:** Python 3.11 o superior. `ffmpeg` **solo** si vas a usar el
+**Requisitos:** Python 3.11 o superior (probado en 3.11 y 3.12). `ffmpeg` **solo** si vas a usar el
 proveedor `openai`.
 
 ```bash
@@ -115,12 +126,15 @@ pip install -r requirements.txt
 
 ### Configuración
 
+La forma cómoda es dejar que el lanzador te las pida y las escriba por ti (lo
+que teclees no se ve en pantalla ni queda en el historial del terminal):
+
 ```bash
-cp .env.example .env
+python run.py --configurar
 ```
 
-Edita `.env` y rellena, como mínimo, la clave del proveedor de transcripción y la
-de Anthropic:
+O a mano: copia `.env.example` a `.env` y rellena, como mínimo, la clave del
+proveedor de transcripción y la del anotador:
 
 | Variable | Obligatoria | Por defecto | Descripción |
 |---|:---:|---|---|
@@ -128,7 +142,11 @@ de Anthropic:
 | `ASSEMBLYAI_API_KEY` | ✅ *(si usas AssemblyAI)* | — | [assemblyai.com](https://www.assemblyai.com/) |
 | `DEEPGRAM_API_KEY` | ✅ *(si usas Deepgram)* | — | [deepgram.com](https://deepgram.com/) |
 | `OPENAI_API_KEY` | ✅ *(si usas OpenAI)* | — | [platform.openai.com](https://platform.openai.com/) |
-| `ANTHROPIC_API_KEY` | ✅ | — | [console.anthropic.com](https://console.anthropic.com/) |
+| `ANNOTATOR_PROVIDER` | — | `gemini` | `gemini` (nivel gratuito, por defecto) o `anthropic` (de pago) |
+| `ANTHROPIC_API_KEY` | ✅ *(si usas Anthropic)* | — | [console.anthropic.com](https://console.anthropic.com/) |
+| `GEMINI_API_KEY` | ✅ *(si usas Gemini)* | — | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — gratis |
+| `GEMINI_MODEL` | — | `gemini-flash-latest` | Modelo de Gemini. El alias `-latest` evita quedarse en un modelo retirado o saturado |
+| `GEMINI_MAX_TOKENS` | — | `32000` | Longitud máxima de los apuntes |
 | `ANTHROPIC_MODEL` | — | `claude-opus-5` | Modelo del anotador |
 | `ANTHROPIC_EFFORT` | — | `high` | `low`, `medium`, `high`, `xhigh` o `max` |
 | `ANTHROPIC_MAX_TOKENS` | — | `32000` | Longitud máxima de los apuntes |
@@ -136,7 +154,7 @@ de Anthropic:
 | `ENABLE_DIARIZATION` | — | `true` | Identificación de oradores |
 | `EXPECTED_SPEAKERS` | — | *(vacío)* | Número aproximado de oradores; mejora la precisión |
 | `STORAGE_DIR` | — | `./storage` | Audios, transcripciones y apuntes |
-| `MAX_UPLOAD_MB` | — | `5120` | Tope de subida (5 GB, el de AssemblyAI) |
+| `MAX_UPLOAD_MB` | — | `5120` | Tope del backend (5 GB, el de AssemblyAI). Streamlit corta antes, en 1 GB: ver `.streamlit/config.toml` |
 | `BACKEND_URL` | — | `http://localhost:8000` | URL que consume el frontend |
 
 > ⚠️ El fichero `.env` está en `.gitignore`. **Nunca subas tus claves al repositorio.**
@@ -145,23 +163,70 @@ de Anthropic:
 
 ## Uso
 
-Arranca el backend en una terminal:
+Un solo comando arranca backend y frontend, comprueba las claves y abre el
+navegador:
+
+```bash
+python run.py
+```
+
+En Windows también se puede hacer **doble clic en `iniciar.bat`**.
+
+Para grabar desde el móvil, `python run.py --red` sirve la app por HTTPS a la
+red local (requiere los certificados; ver [docs/movil.md](docs/movil.md)).
+
+<details>
+<summary>Arrancar los servicios por separado</summary>
 
 ```bash
 uvicorn backend.main:app --reload --port 8000
 ```
 
-Y el frontend en otra:
-
 ```bash
 streamlit run frontend/app.py
 ```
 
-Abre <http://localhost:8501>, sube la grabación y pulsa **Transcribir y generar
-apuntes**. El procesado corre en segundo plano: puedes cerrar el navegador y
-volver más tarde. Una clase de 4 h suele tardar entre **10 y 30 minutos**.
+</details>
+
+Abre <http://localhost:8501>. Puedes **grabar la clase desde la propia app**
+(pestaña *Nueva clase* → *Grabar ahora*) o **subir una grabación** que ya tengas.
+Luego pulsa **Transcribir y generar apuntes**.
+
+> La grabadora integrada es provisional: guarda el audio sin comprimir y no lo
+> envía hasta que paras, así que sirve para clases cortas. Para una clase de
+> varias horas, graba con la app del móvil y súbela como fichero. Ver
+> [docs/ESTADO.md](docs/ESTADO.md).
+
+El procesado corre en segundo plano: puedes cerrar el navegador y volver más
+tarde. Una clase de 4 h suele tardar entre **10 y 30 minutos**.
 
 La documentación interactiva de la API queda en <http://localhost:8000/docs>.
+
+### Grupos por materia
+
+La pestaña **Grupos** organiza las clases por asignatura. Un grupo tiene un
+nombre y una materia, se divide en **temas** (`Unidad 3: Integrales`) y admite:
+
+- **PDFs**: el programa de la materia, los prácticos o los apuntes del docente.
+  No son un adjunto que solo se descarga: **la IA los lee**. Con el programa
+  delante, los apuntes pueden situar la clase dentro de la planificación y usar
+  la terminología de la cátedra. El material sin tema asignado (el programa,
+  típicamente) se aplica a todos los temas.
+- **Notas propias**: escritas por ti, al margen de lo que genera la IA. Además,
+  los apuntes generados se pueden **editar a mano**; las correcciones se guardan
+  aparte, así que rehacer los apuntes con la IA no se las lleva por delante.
+- **Compartir por enlace**: el grupo es privado hasta que generas uno. Al
+  generarlo eliges si quien lo reciba puede **solo leer** o **leer y escribir**.
+  El enlace se puede revocar, y cambiar el permiso no lo invalida.
+
+Al subir una clase se elige en qué grupo y tema archivarla; también se puede
+mover después desde *Mis clases*.
+
+> **Sobre la privacidad, mientras no haya usuarios:** el token protege el
+> *enlace*, no la API. Quien pueda llegar al backend por su cuenta puede
+> consultar cualquier grupo, porque todavía no hay nada que autentique las
+> peticiones. Por eso la app se sirve solo en la red local. El login, que es lo
+> que cierra este hueco, está en el plan.
 
 ### Desde la línea de comandos
 
@@ -186,7 +251,17 @@ curl http://localhost:8000/api/jobs/{job_id}/notes -o apuntes.md
 | `GET` | `/api/jobs/{id}` | Estado completo, transcripción y apuntes |
 | `GET` | `/api/jobs/{id}/notes` | Apuntes en Markdown |
 | `GET` | `/api/jobs/{id}/transcript` | Transcripción con oradores y tiempos |
+| `POST` | `/api/jobs/{id}/reanotar` | Rehace solo los apuntes, sin volver a transcribir |
+| `PUT` | `/api/jobs/{id}/notes` | Guarda la versión corregida a mano |
+| `PATCH` | `/api/jobs/{id}/ubicacion` | Archiva la clase en un grupo y tema |
 | `DELETE` | `/api/jobs/{id}` | Borra el trabajo y sus ficheros |
+| `POST` | `/api/grupos` | Crea un grupo de una materia |
+| `GET` | `/api/grupos` | Lista los grupos |
+| `POST` | `/api/grupos/{id}/compartir` | Genera el enlace (`?permiso=lectura\|escritura`) |
+| `GET` | `/api/compartido/{token}` | Resuelve un enlace compartido |
+| `POST` | `/api/grupos/{id}/temas` | Crea un tema dentro del grupo |
+| `POST` | `/api/grupos/{id}/materiales` | Adjunta un PDF y extrae su texto |
+| `POST` | `/api/grupos/{id}/notas` | Crea una nota propia |
 
 ---
 
@@ -243,6 +318,16 @@ clase cuesta una fracción de la primera pasada. Se comprueba
 `stop_reason == "refusal"` antes de leer la respuesta, porque Claude Opus 5 puede
 declinar una petición devolviendo un HTTP 200.
 
+**Antivirus que inspeccionan HTTPS.** Norton, Kaspersky, ESET y compañía
+sustituyen el certificado de cada sitio por uno propio. Los navegadores lo
+aceptan porque consultan el almacén de Windows; Python no, porque usa la lista
+fija de `certifi`. El síntoma es `CERTIFICATE_VERIFY_FAILED` en **todas** las
+llamadas a las APIs, con las claves correctas y el navegador entrando sin
+problema a las mismas webs. `backend/tls.py` lo resuelve al arrancar
+redirigiendo la verificación al almacén del sistema (`truststore`). No se
+desactiva la validación: se valida contra la lista que el sistema considera de
+confianza.
+
 **Map-reduce de respaldo.** Por encima de `annotation_single_pass_char_limit`
 (~1,2 M de caracteres, muy por encima de las 4 h objetivo) el anotador trocea la
 transcripción **por líneas completas** — nunca a mitad de una intervención —,
@@ -257,9 +342,19 @@ el caso de uso normal esta ruta no se activa nunca.
 pytest
 ```
 
-Los 24 tests cubren el formateo de la transcripción, la normalización de las
-respuestas de AssemblyAI y Deepgram, la persistencia y el flujo completo de la
-API. Usan proveedores simulados: **no gastan ni una llamada a las APIs de pago**.
+Los 71 tests cubren el formateo de la transcripción, la normalización de las
+respuestas de AssemblyAI y Deepgram, la persistencia, el flujo completo de la
+API, los caminos de fallo del pipeline, la carga de la configuración y la de la
+interfaz. Usan
+proveedores simulados: **no gastan ni una llamada a las APIs de pago**.
+
+---
+
+## Documentación adicional
+
+- [docs/ESTADO.md](docs/ESTADO.md) — en qué punto está el proyecto, qué trampas
+  tiene y qué queda pendiente.
+- [docs/movil.md](docs/movil.md) — cómo usar la app desde el móvil.
 
 ---
 
