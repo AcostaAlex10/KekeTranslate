@@ -103,6 +103,29 @@ que manda a reintentar en bucle sin éxito. Ahora el mensaje nombra la cuota y
 apunta al botón de reintento. Más tarde el mismo día la cuota se recuperó y la
 generación completa funcionó.
 
+### El nivel gratuito de Gemini no es la prueba de 90 días (04/09/2026)
+
+Se confundieron dos cosas y costó tiempo, así que queda escrito:
+
+| | Nivel gratuito de la API de Gemini | Prueba de Google Cloud |
+|---|---|---|
+| Qué es | Acceso permanente con límites de uso | 300 USD de crédito |
+| Caduca | **No** | Sí, a los 90 días |
+| Pide tarjeta | No | Sí |
+| Sirve para Gemini | Sí | **No**, desde marzo de 2026 |
+
+Es decir: el crédito de la prueba **ni siquiera se puede gastar** en la API de
+Gemini, así que nada de lo que usa esta app depende de él ni se muere con él.
+
+Los límites reales del nivel gratuito, que sí importan: unas **250 peticiones
+al día** por clave, y **solo modelos Flash** —los Pro pasaron a exigir
+facturación en mayo de 2026—. Esta app usa `gemini-flash-latest`, así que cae
+justo dentro.
+
+**La consecuencia práctica:** al crear el proyecto en la consola de Google
+Cloud, **no le actives la facturación**. Sin cuenta de facturación asociada, el
+proyecto se queda en el nivel gratuito y no hay forma de que aparezca un cobro.
+
 ### Las claves `AQ.` de AI Studio no sirven para esta API (04/09/2026)
 
 Al rotar las claves, la nueva de Gemini empezaba por `AQ.` y medía 53
