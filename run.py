@@ -22,6 +22,11 @@ import webbrowser
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent
+# Por debajo de esto no hay clave de ningun proveedor conocido: la de Gemini
+# ronda los 39 caracteres y la de AssemblyAI los 32. Sirve para cazar un pegado
+# que no entro, que es el fallo mas caro porque se descubre tardisimo.
+LARGO_MINIMO_DE_CLAVE = 20
+
 PUERTO_BACKEND = 8000
 PUERTO_FRONTEND = 8501
 
@@ -225,7 +230,29 @@ def _preguntar_opcion(titulo: str, opciones: dict[str, str], actual: str) -> str
         piso("   Escribe solo el numero de una de las opciones.")
 
 
-def configurar(avanzado: bool = False) -> int:
+def _pedir_clave(nombre: str, estado: str, *, visible: bool) -> str:
+    """Pide una clave y avisa si lo que llego no tiene pinta de serlo.
+
+    El pegado en la consola de Windows falla mas de lo que parece: `getpass` no
+    muestra nada, asi que un pegado a medias se ve igual que uno correcto y no
+    se descubre hasta que el proveedor devuelve un 400 sin explicar nada. Por
+    eso se comprueba el largo aqui, y por eso existe `--visible`.
+    """
+    from getpass import getpass
+
+    leer = input if visible else getpass
+    while True:
+        valor = leer(f"   {nombre} ({estado}): ").strip()
+        if not valor or len(valor) >= LARGO_MINIMO_DE_CLAVE:
+            return valor
+        piso(f"   [!] Eso son {len(valor)} caracteres: no parece una clave entera.")
+        piso("       Si al pegar no ves nada y sospechas que no entro, corta con")
+        piso("       Ctrl+C y vuelve con:  python run.py --configurar --visible")
+        piso("       (ahi si se ve lo que escribes). Enter en blanco lo deja igual.")
+        print()
+
+
+def configurar(avanzado: bool = False, visible: bool = False) -> int:
     """Pide las claves por teclado y las guarda en el `.env`.
 
     Se hace asi, y no editando el fichero a mano, porque el `.env` mezcla
@@ -235,8 +262,6 @@ def configurar(avanzado: bool = False) -> int:
     Lo que se teclea no se muestra en pantalla ni queda en el historial del
     terminal.
     """
-    from getpass import getpass
-
     preparar_env()
 
     print("\n=== Configurar KekeTranslate ===\n")
@@ -273,7 +298,7 @@ def configurar(avanzado: bool = False) -> int:
     for clave in (clave_t, clave_a):
         actual = env.get(clave, "")
         estado = f"ya hay una, termina en ...{actual[-4:]}" if len(actual) > 4 else "vacia"
-        valor = getpass(f"   {clave} ({estado}): ").strip()
+        valor = _pedir_clave(clave, estado, visible=visible)
         if valor:
             nuevos[clave] = valor
 
@@ -283,8 +308,16 @@ def configurar(avanzado: bool = False) -> int:
     piso(f"Guardado en {RAIZ / '.env'}")
     for nombre in (clave_t, clave_a):
         guardada = leer_env().get(nombre, "")
-        # Se confirma que quedo escrita sin llegar a mostrarla entera.
-        estado = f"OK (...{guardada[-4:]})" if guardada else "SIGUE VACIA"
+        # Se confirma que quedo escrita sin llegar a mostrarla entera. Y se
+        # comprueba que tenga pinta de clave: decir "OK" de un valor de un
+        # caracter es peor que no decir nada, porque el fallo aparece mucho
+        # despues y disfrazado de error del proveedor.
+        if not guardada:
+            estado = "SIGUE VACIA"
+        elif len(guardada) < LARGO_MINIMO_DE_CLAVE:
+            estado = f"SOSPECHOSA: solo {len(guardada)} caracteres, no parece una clave"
+        else:
+            estado = f"OK ({len(guardada)} caracteres, ...{guardada[-4:]})"
         piso(f"  {nombre}: {estado}")
 
     faltan = claves_que_faltan()
@@ -379,10 +412,15 @@ def main() -> int:
         "--avanzado", action="store_true",
         help="con --configurar, permite ademas elegir los proveedores",
     )
+    parser.add_argument(
+        "--visible", action="store_true",
+        help="con --configurar, muestra la clave al teclearla (por si el pegado"
+             " a ciegas no funciona en tu terminal)",
+    )
     args = parser.parse_args()
 
     if args.configurar:
-        return configurar(avanzado=args.avanzado)
+        return configurar(avanzado=args.avanzado, visible=args.visible)
 
     print("\n=== KekeTranslate ===\n")
 
