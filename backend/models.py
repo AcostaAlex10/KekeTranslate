@@ -107,6 +107,10 @@ class Job(BaseModel):
     # correcciones propias no desaparecen sin avisar.
     notes_editadas: str | None = None
 
+    # Quien la subio. Nulo solo en las clases que existian antes de que hubiera
+    # cuentas; la primera que se cree se las queda.
+    usuario_id: str | None = None
+
     # Ubicacion dentro de la biblioteca. Ambos pueden ser nulos: una clase
     # suelta, sin archivar, sigue siendo valida.
     grupo_id: str | None = None
@@ -161,6 +165,20 @@ class JobSummary(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class Usuario(BaseModel):
+    """Una persona con cuenta. Nunca lleva la contrasena ni su hash."""
+
+    id: str
+    email: str
+    nombre: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    # Como puede entrar. Se muestra en la interfaz para que quien entro con
+    # Google sepa que todavia no tiene contrasena, y al reves.
+    tiene_password: bool = False
+    tiene_google: bool = False
+
+
 class Permiso(str, Enum):
     """Lo que puede hacer quien entra con el enlace compartido."""
 
@@ -189,6 +207,10 @@ class Grupo(BaseModel):
     materia: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    # Quien lo creo. Es el unico que lo ve en su lista; los demas solo llegan
+    # por un enlace compartido, y solo a ese grupo.
+    usuario_id: str | None = None
 
     # Mientras no haya token, el grupo es privado. Compartir es siempre un acto
     # explicito de quien lo creo.

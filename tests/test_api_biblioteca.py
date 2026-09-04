@@ -91,14 +91,33 @@ def client(tmp_path, monkeypatch):
 
     monkeypatch.setattr(main, "_store", None)
     monkeypatch.setattr(main, "_biblioteca", None)
+    monkeypatch.setattr(main, "_usuarios", None)
 
     _AnotadorEspia.ultimo_contexto = None
     _AnotadorEspia.ultimo_prompt = ""
 
     with TestClient(main.app) as test_client:
+        entrar_como(test_client)
         yield test_client
 
     get_settings.cache_clear()
+
+
+def entrar_como(client, email="alumno@unam.edu.ar", password="una-frase-larga"):
+    """Crea una cuenta y deja el cliente autenticado.
+
+    Desde que la API exige sesion, un test sin cuenta solo comprueba que el
+    backend responde 401. La cuenta se crea aqui para que cada test siga
+    hablando del comportamiento que le interesa.
+    """
+    respuesta = client.post(
+        "/api/auth/registro", json={"email": email, "password": password}
+    )
+    assert respuesta.status_code == 201, respuesta.text
+    token = respuesta.json()["token"]
+    client.headers["Authorization"] = f"Bearer {token}"
+    client.usuario = respuesta.json()["usuario"]
+    return client.usuario
 
 
 def _grupo(client, nombre="Comision 3", materia="Analisis Matematico I"):

@@ -71,11 +71,31 @@ def client(tmp_path, monkeypatch):
     import backend.main as main
 
     monkeypatch.setattr(main, "_store", None)
+    monkeypatch.setattr(main, "_biblioteca", None)
+    monkeypatch.setattr(main, "_usuarios", None)
 
     with TestClient(main.app) as test_client:
+        entrar_como(test_client)
         yield test_client
 
     get_settings.cache_clear()
+
+
+def entrar_como(client, email="alumno@unam.edu.ar", password="una-frase-larga"):
+    """Crea una cuenta y deja el cliente autenticado.
+
+    Desde que la API exige sesion, un test sin cuenta solo comprueba que el
+    backend responde 401. La cuenta se crea aqui para que cada test siga
+    hablando del comportamiento que le interesa.
+    """
+    respuesta = client.post(
+        "/api/auth/registro", json={"email": email, "password": password}
+    )
+    assert respuesta.status_code == 201, respuesta.text
+    token = respuesta.json()["token"]
+    client.headers["Authorization"] = f"Bearer {token}"
+    client.usuario = respuesta.json()["usuario"]
+    return client.usuario
 
 
 def _audio(name: str = "clase_calculo.mp3", size: int = 4096):
@@ -143,7 +163,14 @@ def test_apuntes_y_transcripcion_dan_409_antes_de_estar_listos(client, monkeypat
     from backend.models import Job
 
     store = main.get_store()
-    store.create(Job(id="encurso", filename="clase.mp3", status=JobStatus.TRANSCRIBING))
+    store.create(
+        Job(
+            id="encurso",
+            filename="clase.mp3",
+            status=JobStatus.TRANSCRIBING,
+            usuario_id=client.usuario["id"],
+        )
+    )
 
     notas = client.get("/api/jobs/encurso/notes")
     assert notas.status_code == 409
@@ -165,6 +192,7 @@ def test_un_trabajo_fallido_se_ve_en_el_listado(client, monkeypatch):
             filename="clase.mp3",
             status=JobStatus.FAILED,
             error="Falta ASSEMBLYAI_API_KEY.",
+            usuario_id=client.usuario["id"],
         )
     )
 
@@ -187,8 +215,11 @@ def test_rechaza_ficheros_que_superan_el_limite(tmp_path, monkeypatch):
     import backend.main as main
 
     monkeypatch.setattr(main, "_store", None)
+    monkeypatch.setattr(main, "_biblioteca", None)
+    monkeypatch.setattr(main, "_usuarios", None)
 
     with TestClient(main.app) as client:
+        entrar_como(client)
         respuesta = client.post("/api/jobs", files=_audio(size=2 * 1024 * 1024))
 
     assert respuesta.status_code == 413
@@ -211,6 +242,7 @@ def test_un_trabajo_fallido_devuelve_el_error_y_no_un_falso_en_curso(client):
             filename="clase.mp3",
             status=JobStatus.FAILED,
             error="AssemblyAI rechazo el audio",
+            usuario_id=client.usuario["id"],
         )
     )
 

@@ -103,17 +103,26 @@ class JobStore:
         """Atajo para cambiar el estado (y opcionalmente registrar un error)."""
         return self.update(job_id, status=status, error=error)
 
-    def list(self, limit: int = 50) -> list[JobSummary]:
-        """Lista los trabajos mas recientes."""
+    def list(
+        self, limit: int = 50, usuario_id: str | None = None
+    ) -> list[JobSummary]:
+        """Las clases de una persona, de la mas reciente a la mas vieja.
+
+        El filtro va aqui y no en quien llama: una lista de clases que no son
+        tuyas no debe llegar a existir en memoria, aunque despues se descarte.
+        """
         with self._lock, self._connect() as conn:
             rows = conn.execute(
-                "SELECT payload FROM jobs ORDER BY created_at DESC LIMIT ?",
-                (limit,),
+                "SELECT payload FROM jobs ORDER BY created_at DESC"
             ).fetchall()
 
         summaries = []
         for row in rows:
             data = json.loads(row["payload"])
+            if data.get("usuario_id") != usuario_id:
+                continue
+            if len(summaries) >= limit:
+                break
             summaries.append(
                 JobSummary(
                     id=data["id"],
@@ -128,6 +137,25 @@ class JobStore:
                 )
             )
         return summaries
+
+    def adoptar_huerfanos(self, usuario_id: str) -> int:
+        """Da dueno a las clases subidas antes de que hubiera cuentas."""
+        adoptadas = 0
+        with self._lock, self._connect() as conn:
+            for fila in conn.execute("SELECT id, payload FROM jobs").fetchall():
+                if json.loads(fila["payload"]).get("usuario_id") is not None:
+                    continue
+                # Se reescribe pasando por el modelo, no manipulando el JSON a
+                # mano: asi el payload guardado sigue teniendo exactamente la
+                # forma que produce el resto del almacen.
+                job = Job.model_validate_json(fila["payload"])
+                job.usuario_id = usuario_id
+                conn.execute(
+                    "UPDATE jobs SET payload = ? WHERE id = ?",
+                    (job.model_dump_json(), fila["id"]),
+                )
+                adoptadas += 1
+        return adoptadas
 
     def delete(self, job_id: str) -> bool:
         """Borra un trabajo. Devuelve `True` si existia."""

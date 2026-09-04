@@ -84,11 +84,14 @@ Tres cosas que un transcriptor genérico no hace:
 
 - **Los apuntes son privados por defecto.** Nada se comparte salvo decisión
   explícita de quien los generó. Es la única restricción marcada como
-  innegociable.
-- **No hay usuarios ni autenticación.** El token de compartir protege el
-  enlace, no la API: quien alcance el backend puede consultar cualquier grupo.
-  Por eso hoy la app se sirve solo en la red local. Con el alcance público
-  confirmado, esto pasa de ser una limitación aceptable a ser un bloqueante.
+  innegociable, y desde que hay cuentas está respaldada por el código: la API
+  niega por defecto y solo abre lo que está declarado abierto.
+- **Hay cuentas y la API está cerrada.** Se entra con correo y contraseña o
+  con Google, y cada persona solo ve lo suyo: pedir la clase de otro devuelve
+  404, no 403. Lo único accesible sin cuenta es un enlace compartido, y solo
+  abre el grupo al que apunta. La sesión, en cambio, **vive mientras la pestaña
+  siga abierta**: al recargar hay que volver a entrar, porque Streamlit no
+  ofrece cookies y no se quiso meter el testigo en la URL.
 - **El audio se borra en cuanto la clase se transcribe bien**, y no hay
   reproductor. Es una decisión tomada, no una carencia: guardar el audio de una
   cursada entera cuesta disco de verdad —una clase de 4 h son 2,5 GB sin
@@ -106,8 +109,8 @@ Tres cosas que un transcriptor genérico no hace:
   cursar en un idioma y recibir los apuntes en otro. El **idioma de salida se
   elige en cada clase**, no una vez para todo. Hoy el idioma es un ajuste global
   del `.env` y los apuntes salen en el idioma de la clase.
-- **Se contempla cobrar** por el uso. Hoy no hay ninguna medición de consumo por
-  persona, que es lo que haría falta para poder cobrar.
+- **Se contempla cobrar** por el uso. Con las cuentas ya se sabe de quién es
+  cada clase, que era el requisito previo; falta medir el consumo.
 
 **Sin decidir**
 

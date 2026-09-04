@@ -6,6 +6,7 @@ en maquinas distintas. La URL se configura con `BACKEND_URL`.
 
 from __future__ import annotations
 
+import json
 import os
 import unicodedata
 from datetime import datetime
@@ -159,16 +160,32 @@ def cliente() -> httpx.Client:
     return httpx.Client(base_url=BACKEND_URL, timeout=30.0)
 
 
+def testigo() -> str:
+    """El testigo de sesion de quien esta usando la app ahora mismo."""
+    return st.session_state.get("sesion") or ""
+
+
+def _cabeceras(testigo_de_sesion: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {testigo_de_sesion}"} if testigo_de_sesion else {}
+
+
 @st.cache_data(ttl=SEGUNDOS_DE_CACHE, show_spinner="Cargando…")
-def _leer(path: str, params: tuple[tuple[str, str], ...]):
+def _leer(path: str, params: tuple[tuple[str, str], ...], testigo_de_sesion: str):
     """Lectura cacheada del backend.
 
     Sin esto, cambiar de grupo o desplegar una clase relanzaba **todas** las
     peticiones de la pantalla, incluidas las de los apuntes completos de cada
     clase, que son las mas pesadas. La cache se vacia sola en unos segundos y a
     mano en cuanto se escribe algo, asi que no llega a mostrar datos viejos.
+
+    El testigo entra como parametro y no como cabecera fija por una razon que no
+    es de estilo: `st.cache_data` es unica para todo el servidor, no una por
+    persona. Si la clave de cache no incluyera quien pregunta, la segunda
+    persona en pedir "/api/jobs" recibiria la lista de la primera.
     """
-    respuesta = cliente().get(path, params=dict(params))
+    respuesta = cliente().get(
+        path, params=dict(params), headers=_cabeceras(testigo_de_sesion)
+    )
     respuesta.raise_for_status()
     return respuesta.json()
 
@@ -185,7 +202,7 @@ def api_get(path: str, **params):
     rota cuando solo estaba diciendo que el enlace ya no vale.
     """
     try:
-        return _leer(path, tuple(sorted(params.items())))
+        return _leer(path, tuple(sorted(params.items())), testigo())
     except httpx.HTTPStatusError as exc:
         # El backend contesto y explico por que. Ese texto es el bueno; quien
         # llama decide si mostrarlo o dar su propio mensaje.
@@ -217,6 +234,7 @@ def api_llamar(metodo: str, path: str, **kwargs):
     ese texto al codigo HTTP, que no le dice nada a quien usa la app.
     """
     try:
+        kwargs.setdefault("headers", {}).update(_cabeceras(testigo()))
         respuesta = cliente().request(metodo, path, timeout=60.0, **kwargs)
     except httpx.HTTPError as exc:
         st.error(
@@ -265,6 +283,7 @@ def upload_file(
             f"{BACKEND_URL}/api/jobs",
             files=files,
             params=params,
+            headers=_cabeceras(testigo()),
             timeout=UPLOAD_TIMEOUT,
         )
         if response.status_code >= 400:
@@ -334,7 +353,11 @@ def _ofrecer_reintento(job_id: str) -> None:
         return
 
     try:
-        respuesta = httpx.post(f"{BACKEND_URL}/api/jobs/{job_id}/reanotar", timeout=30.0)
+        respuesta = httpx.post(
+            f"{BACKEND_URL}/api/jobs/{job_id}/reanotar",
+            headers=_cabeceras(testigo()),
+            timeout=30.0,
+        )
     except httpx.HTTPError as exc:
         st.error(
             "No hay conexión con el servidor. La transcripción sigue guardada; "
@@ -520,7 +543,7 @@ faltan_claves = bool(salud) and not (
 # esta en el plan.
 
 
-def vista_compartida(grupo: dict) -> None:
+def vista_compartida(grupo: dict, token: str) -> None:
     """Muestra un grupo abierto desde su enlace, sin el resto de la app.
 
     Quien llega por aqui no es el dueno: no ve sus otras clases ni puede subir
@@ -535,7 +558,9 @@ def vista_compartida(grupo: dict) -> None:
     else:
         st.info("Puedes leerlo todo, pero no modificar nada.")
 
-    temas = api_get(f"/api/grupos/{grupo['id']}/temas") or []
+    # Todo lo de aqui va por `/api/compartido/{token}/...`: el enlace abre su
+    # grupo y nada mas. Las rutas normales exigen sesion.
+    temas = api_get(f"/api/compartido/{token}/temas") or []
     nombres_tema = {t["id"]: t["nombre"] for t in temas}
 
     pestanas = st.tabs(["Clases", "Material", "Notas"])
@@ -546,7 +571,7 @@ def vista_compartida(grupo: dict) -> None:
         # estaba listo, asi que un grupo cuyas clases fallaron se abria en
         # blanco: ni apuntes, ni aviso, ni explicacion. Es la primera pantalla
         # que ve alguien que llega por el enlace compartido.
-        todas = api_get("/api/jobs", grupo_id=grupo["id"]) or []
+        todas = api_get(f"/api/compartido/{token}/clases") or []
         clases = [c for c in todas if c["status"] == "completed"]
         pendientes = len(todas) - len(clases)
 
@@ -586,7 +611,7 @@ def vista_compartida(grupo: dict) -> None:
             abierta = next(
                 c for c in clases if c["id"] == st.session_state["clase_compartida"]
             )
-            detalle = api_get(f"/api/jobs/{abierta['id']}")
+            detalle = api_get(f"/api/compartido/{token}/clases/{abierta['id']}")
             if detalle:
                 apuntes = (
                     detalle.get("notes_editadas")
@@ -603,7 +628,7 @@ def vista_compartida(grupo: dict) -> None:
                 )
 
     with pestanas[1]:
-        materiales = api_get(f"/api/grupos/{grupo['id']}/materiales") or []
+        materiales = api_get(f"/api/compartido/{token}/materiales") or []
         if not materiales:
             st.info("Este grupo no tiene material adjunto.")
         for material in materiales:
@@ -625,7 +650,7 @@ def vista_compartida(grupo: dict) -> None:
                 if st.form_submit_button("Añadir nota") and titulo.strip():
                     if api_llamar(
                         "POST",
-                        f"/api/grupos/{grupo['id']}/notas",
+                        f"/api/compartido/{token}/notas",
                         json={
                             "titulo": titulo,
                             "contenido": contenido,
@@ -634,7 +659,7 @@ def vista_compartida(grupo: dict) -> None:
                     ) is not None:
                         st.rerun()
 
-        notas = api_get(f"/api/grupos/{grupo['id']}/notas") or []
+        notas = api_get(f"/api/compartido/{token}/notas") or []
         if not notas:
             st.info("Este grupo todavía no tiene notas.")
         for nota in notas:
@@ -652,7 +677,7 @@ def vista_compartida(grupo: dict) -> None:
                     if st.button("Guardar", key=f"sh_save_{nota['id']}"):
                         if api_llamar(
                             "PUT",
-                            f"/api/notas/{nota['id']}",
+                            f"/api/compartido/{token}/notas/{nota['id']}",
                             json={"contenido": texto},
                         ) is not None:
                             st.rerun()
@@ -669,8 +694,166 @@ if _token:
             "de compartir el grupo. Pídele uno nuevo."
         )
         st.stop()
-    vista_compartida(_grupo_compartido)
+    vista_compartida(_grupo_compartido, _token)
     st.stop()
+
+
+# ---------------------------------------------------------------------------
+# Entrar
+# ---------------------------------------------------------------------------
+
+
+def guardar_sesion(respuesta: dict) -> None:
+    st.session_state["sesion"] = respuesta["token"]
+    st.session_state["usuario"] = respuesta["usuario"]
+    refrescar()
+
+
+def cerrar_sesion() -> None:
+    api_llamar("POST", "/api/auth/salir")
+    for clave in ("sesion", "usuario", "clase_abierta"):
+        st.session_state.pop(clave, None)
+    refrescar()
+
+
+def _volver_de_google() -> None:
+    """Termina de entrar cuando Google devuelve el navegador aquí.
+
+    El código llega en la URL, así que se limpia en cuanto se canjea: no tiene
+    por qué quedarse en el historial ni viajar en un enlace copiado.
+    """
+    codigo = st.query_params.get("code")
+    if not codigo or st.session_state.get("sesion"):
+        return
+
+    respuesta = api_llamar(
+        "POST",
+        "/api/auth/google",
+        json={
+            "code": codigo,
+            "redirect_uri": enlace_base(),
+            "state": st.query_params.get("state", ""),
+        },
+    )
+    st.query_params.clear()
+    if respuesta:
+        guardar_sesion(respuesta)
+        st.rerun()
+
+
+def _formulario_de_entrada() -> None:
+    with st.form("entrar"):
+        email = st.text_input("Correo", placeholder="tu.correo@ejemplo.com")
+        password = st.text_input("Contraseña", type="password")
+        if st.form_submit_button("Entrar", type="primary"):
+            respuesta = api_llamar(
+                "POST", "/api/auth/entrar", json={"email": email, "password": password}
+            )
+            if respuesta:
+                guardar_sesion(respuesta)
+                st.rerun()
+
+
+def _formulario_de_alta() -> None:
+    with st.form("crear_cuenta"):
+        nombre = st.text_input("Cómo te llamas", placeholder="Alex")
+        email = st.text_input("Correo", placeholder="tu.correo@ejemplo.com")
+        password = st.text_input(
+            "Contraseña",
+            type="password",
+            help=(
+                "Al menos 10 caracteres. Una frase que recuerdes protege más "
+                "que un jeroglífico corto."
+            ),
+        )
+        if st.form_submit_button("Crear la cuenta", type="primary"):
+            respuesta = api_llamar(
+                "POST",
+                "/api/auth/registro",
+                json={"email": email, "password": password, "nombre": nombre},
+            )
+            if respuesta:
+                guardar_sesion(respuesta)
+                st.rerun()
+
+
+def _boton_de_google() -> None:
+    """Ofrece entrar con Google, si este servidor lo tiene configurado."""
+    configuracion = api_get("/api/auth/google")
+    if not (configuracion and configuracion.get("activo")):
+        return
+
+    st.divider()
+    if st.button("Entrar con Google", use_container_width=True):
+        inicio = api_llamar(
+            "POST", "/api/auth/google/inicio", json={"redirect_uri": enlace_base()}
+        )
+        if inicio:
+            # Se navega desde el documento padre: el componente vive en un
+            # iframe y cambiar su propia URL no movería la página.
+            components.html(
+                "<script>window.parent.location.href = "
+                f"{json.dumps(inicio['url'])};</script>",
+                height=0,
+            )
+
+
+def pantalla_de_entrada() -> None:
+    """Lo único que se ve sin cuenta, además de un enlace compartido."""
+    st.title("🎓 KekeTranslate")
+    st.caption(
+        "Tus clases grabadas, convertidas en apuntes. Privados salvo que "
+        "decidas compartirlos."
+    )
+
+    if not salud:
+        st.error(
+            "No hay conexión con el servidor de KekeTranslate, así que no se "
+            "puede entrar todavía. Arráncalo y vuelve a cargar la página."
+        )
+        st.code("python run.py", language="bash")
+        return
+
+    columna, _ = st.columns([3, 2])
+    with columna:
+        modo = st.radio(
+            "Qué quieres hacer",
+            ["Entrar", "Crear una cuenta"],
+            key="modo_de_entrada",
+            horizontal=True,
+            label_visibility="collapsed",
+        )
+        if modo == "Entrar":
+            _formulario_de_entrada()
+        else:
+            _formulario_de_alta()
+        _boton_de_google()
+
+    st.caption(
+        "La sesión dura mientras esta pestaña siga abierta. Al recargar la "
+        "página hay que volver a entrar."
+    )
+
+
+_volver_de_google()
+
+if not st.session_state.get("sesion"):
+    pantalla_de_entrada()
+    st.stop()
+
+# A partir de aquí hay cuenta. Se comprueba contra el servidor, no contra lo
+# guardado en la sesión: el testigo puede haber caducado o haberse revocado
+# desde otro dispositivo, y en ese caso hay que volver a la pantalla de entrar
+# en vez de dejar la app medio rota lanzando 401 por todas partes.
+_yo = api_get("/api/auth/yo")
+if not _yo:
+    st.session_state.pop("sesion", None)
+    st.session_state.pop("usuario", None)
+    st.warning("Tu sesión ha caducado. Vuelve a entrar.")
+    pantalla_de_entrada()
+    st.stop()
+
+st.session_state["usuario"] = _yo
 
 
 # ---------------------------------------------------------------------------
@@ -722,6 +905,19 @@ elif faltan_claves:
             f"Falta la clave de `{salud.get('annotator_provider', 'anotador')}` "
             "en el .env: las clases se transcribirán, pero no habrá apuntes."
         )
+
+# El nombre y no el correo: Streamlit convierte un correo en un enlace `mailto`
+# dentro de su Markdown, y ahi no hay nada que pulsar. El correo se ve al pasar
+# por encima, que es cuando de verdad hace falta —para saber con que cuenta se
+# esta— sin ocupar sitio en una barra que en el movil cabe justa.
+_yo_visible = st.session_state["usuario"]
+st.sidebar.caption(
+    f"👤 {_yo_visible['nombre'] or _yo_visible['email']}",
+    help=_yo_visible["email"],
+)
+if st.sidebar.button("Salir", key="salir", use_container_width=True):
+    cerrar_sesion()
+    st.rerun()
 
 if salud:
     st.sidebar.caption("✅ Servidor conectado")

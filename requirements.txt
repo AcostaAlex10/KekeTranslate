@@ -11,6 +11,9 @@ aiofiles==24.1.0
 anthropic>=1.0.0            # Anotador IA (Claude)
 google-genai>=2.20.0        # Anotador IA (Gemini): alternativa con nivel gratuito
 
+# --- Cuentas ---
+argon2-cffi>=23.1           # Hash de contrasenas (Argon2id, lo que recomienda OWASP)
+
 # --- Material de la biblioteca ---
 pypdf>=5.1                  # Extraer el texto de los PDF para que la IA los lea
 

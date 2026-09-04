@@ -24,6 +24,7 @@ from .models import Grupo, Material, Nota, Permiso, Tema, TipoMaterial
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS grupos (
     id             TEXT PRIMARY KEY,
+    usuario_id     TEXT,
     nombre         TEXT NOT NULL,
     materia        TEXT NOT NULL,
     created_at     TEXT NOT NULL,
@@ -65,6 +66,7 @@ CREATE TABLE IF NOT EXISTS notas (
     updated_at  TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_notas_grupo ON notas (grupo_id);
+CREATE INDEX IF NOT EXISTS idx_grupos_usuario ON grupos (usuario_id);
 """
 
 
@@ -84,6 +86,15 @@ class Biblioteca:
         self._lock = threading.Lock()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
+            # `CREATE TABLE IF NOT EXISTS` no toca una tabla que ya existe, asi
+            # que a una base anterior a las cuentas hay que anadirle la columna
+            # del dueno a mano. Los grupos que ya habia se quedan sin dueno
+            # hasta que se cree la primera cuenta, que los adopta.
+            columnas = {
+                f["name"] for f in conn.execute("PRAGMA table_info(grupos)")
+            }
+            if columnas and "usuario_id" not in columnas:
+                conn.execute("ALTER TABLE grupos ADD COLUMN usuario_id TEXT")
             conn.executescript(_SCHEMA)
 
     def _connect(self) -> sqlite3.Connection:
@@ -93,14 +104,22 @@ class Biblioteca:
 
     # -- Grupos -------------------------------------------------------------
 
-    def crear_grupo(self, nombre: str, materia: str) -> Grupo:
-        grupo = Grupo(id=_id(), nombre=nombre.strip(), materia=materia.strip())
+    def crear_grupo(
+        self, nombre: str, materia: str, usuario_id: str | None = None
+    ) -> Grupo:
+        grupo = Grupo(
+            id=_id(),
+            nombre=nombre.strip(),
+            materia=materia.strip(),
+            usuario_id=usuario_id,
+        )
         with self._lock, self._connect() as conn:
             conn.execute(
-                "INSERT INTO grupos (id, nombre, materia, created_at, updated_at,"
-                " share_token, share_permiso) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO grupos (id, usuario_id, nombre, materia, created_at,"
+                " updated_at, share_token, share_permiso)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    grupo.id, grupo.nombre, grupo.materia,
+                    grupo.id, grupo.usuario_id, grupo.nombre, grupo.materia,
                     grupo.created_at.isoformat(), grupo.updated_at.isoformat(),
                     None, grupo.share_permiso.value,
                 ),
@@ -124,12 +143,23 @@ class Biblioteca:
             ).fetchone()
         return _a_grupo(fila) if fila else None
 
-    def listar_grupos(self) -> list[Grupo]:
+    def listar_grupos(self, usuario_id: str | None = None) -> list[Grupo]:
+        """Los grupos de una persona. Sin dueno, los que no tienen ninguno."""
         with self._lock, self._connect() as conn:
             filas = conn.execute(
-                "SELECT * FROM grupos ORDER BY materia, nombre"
+                "SELECT * FROM grupos WHERE usuario_id IS ? ORDER BY materia, nombre",
+                (usuario_id,),
             ).fetchall()
         return [_a_grupo(f) for f in filas]
+
+    def adoptar_huerfanos(self, usuario_id: str) -> int:
+        """Da dueno a los grupos que se crearon antes de que hubiera cuentas."""
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE grupos SET usuario_id = ? WHERE usuario_id IS NULL",
+                (usuario_id,),
+            )
+        return cursor.rowcount
 
     def renombrar_grupo(self, grupo_id: str, nombre: str, materia: str) -> Grupo | None:
         with self._lock, self._connect() as conn:
@@ -354,6 +384,7 @@ class Biblioteca:
 def _a_grupo(fila: sqlite3.Row) -> Grupo:
     return Grupo(
         id=fila["id"], nombre=fila["nombre"], materia=fila["materia"],
+        usuario_id=fila["usuario_id"],
         created_at=fila["created_at"], updated_at=fila["updated_at"],
         share_token=fila["share_token"],
         share_permiso=Permiso(fila["share_permiso"]),

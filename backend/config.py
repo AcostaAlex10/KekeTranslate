@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     # --- Almacenamiento y limites ---
     storage_dir: Path = Path("./storage")
     max_upload_mb: int = 5_120  # 5 GB, el tope del endpoint de AssemblyAI.
+    # Entrar con Google. Vacios = la opcion no aparece y solo se entra con
+    # correo y contrasena. El secreto no sale nunca del backend.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+
     max_material_mb: int = 50   # PDFs adjuntos a un grupo.
     backend_url: str = "http://localhost:8000"
 
