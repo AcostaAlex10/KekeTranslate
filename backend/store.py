@@ -118,10 +118,13 @@ class JobStore:
                 JobSummary(
                     id=data["id"],
                     filename=data["filename"],
+                    titulo=data.get("titulo"),
                     status=data["status"],
                     created_at=data["created_at"],
                     audio_duration_seconds=data.get("audio_duration_seconds"),
                     error=data.get("error"),
+                    grupo_id=data.get("grupo_id"),
+                    tema_id=data.get("tema_id"),
                 )
             )
         return summaries

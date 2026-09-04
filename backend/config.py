@@ -10,10 +10,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 TranscriptionProvider = Literal["assemblyai", "deepgram", "openai"]
+AnnotatorProvider = Literal["anthropic", "gemini"]
 
 
 class Settings(BaseSettings):
@@ -37,14 +38,31 @@ class Settings(BaseSettings):
     expected_speakers: int | None = None
 
     # --- Anotador IA ---
+    # Gemini por defecto porque tiene nivel gratuito y Anthropic no: quien
+    # clone el repositorio tiene que poder generar apuntes sin poner dinero.
+    # Con ANNOTATOR_PROVIDER=anthropic se cambia a Claude.
+    annotator_provider: AnnotatorProvider = "gemini"
+
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-opus-5"
     anthropic_effort: Literal["low", "medium", "high", "xhigh", "max"] = "high"
     anthropic_max_tokens: int = 32_000
 
+    # --- Anotador: Google Gemini (alternativa gratuita) ---
+    gemini_api_key: str = ""
+    # Alias, no una version concreta: Google lo mantiene apuntando al modelo
+    # flash vigente. Fijar una version tiene dos problemas comprobados: se
+    # retira sin aviso para las cuentas nuevas (la serie 2.5 ya devuelve 404) y
+    # concentra la carga, asi que devuelve 503 cuando hay demanda alta.
+    gemini_model: str = "gemini-flash-latest"
+    gemini_max_tokens: int = 32_000
+    # Baja: los apuntes deben ceñirse a lo que se dijo en clase, no inventar.
+    gemini_temperature: float = 0.3
+
     # --- Almacenamiento y limites ---
     storage_dir: Path = Path("./storage")
     max_upload_mb: int = 5_120  # 5 GB, el tope del endpoint de AssemblyAI.
+    max_material_mb: int = 50   # PDFs adjuntos a un grupo.
     backend_url: str = "http://localhost:8000"
 
     # --- Ajustes internos del pipeline ---
@@ -57,12 +75,49 @@ class Settings(BaseSettings):
     # Tamano de cada bloque en la fase "map" del anotador (en caracteres).
     annotation_chunk_chars: int = 280_000
 
+    # Espacio maximo que puede ocupar el material del grupo (programa, guias)
+    # dentro del prompt, repartido entre los documentos adjuntos. Es contexto
+    # de apoyo: no debe competir con la transcripcion, que es lo que se anota.
+    annotation_material_char_limit: int = 120_000
+
     # Segundos entre sondeos al proveedor de transcripcion.
     poll_interval_seconds: float = 15.0
 
     # Tiempo maximo de espera de una transcripcion (4 h de audio suelen
     # procesarse en 10-25 min, pero damos margen amplio).
     transcription_timeout_seconds: float = 4 * 60 * 60
+
+    @model_validator(mode="before")
+    @classmethod
+    def _ignorar_numericos_vacios(cls, valores):
+        """Trata una variable numerica vacia como si no estuviera puesta.
+
+        En un `.env` lo natural es dejar `EXPECTED_SPEAKERS=` sin valor para
+        decir "esto no lo configuro", y asi viene en `.env.example`. Pydantic
+        recibia la cadena vacia e intentaba convertirla a numero, de modo que
+        el backend no arrancaba con el fichero de ejemplo recien copiado.
+
+        Solo se descartan los campos numericos y booleanos: en los de texto el
+        vacio puede ser significativo (`TRANSCRIPTION_LANGUAGE` vacio pide
+        deteccion automatica del idioma).
+        """
+        if not isinstance(valores, dict):
+            return valores
+
+        no_textuales = {
+            nombre
+            for nombre, campo in cls.model_fields.items()
+            if campo.annotation not in (str, Path)
+        }
+        return {
+            clave: valor
+            for clave, valor in valores.items()
+            if not (
+                clave.lower() in no_textuales
+                and isinstance(valor, str)
+                and not valor.strip()
+            )
+        }
 
     @property
     def uploads_dir(self) -> Path:
@@ -73,6 +128,11 @@ class Settings(BaseSettings):
         return self.storage_dir / "results"
 
     @property
+    def materiales_dir(self) -> Path:
+        """PDFs adjuntos a los grupos (programa, guias, apuntes del docente)."""
+        return self.storage_dir / "materiales"
+
+    @property
     def db_path(self) -> Path:
         return self.storage_dir / "keketranslate.db"
 
@@ -80,10 +140,18 @@ class Settings(BaseSettings):
     def max_upload_bytes(self) -> int:
         return self.max_upload_mb * 1024 * 1024
 
+    @property
+    def max_material_bytes(self) -> int:
+        """Tope de un PDF adjunto. Muy por debajo del de una grabacion: un
+        programa o un practico pesan pocos MB, y algo mayor suele ser un
+        escaneo del que no se va a poder extraer texto igualmente."""
+        return self.max_material_mb * 1024 * 1024
+
     def ensure_dirs(self) -> None:
         """Crea la estructura de carpetas de trabajo si no existe."""
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
         self.results_dir.mkdir(parents=True, exist_ok=True)
+        self.materiales_dir.mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache
