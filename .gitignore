@@ -20,3 +20,15 @@ storage/
 .DS_Store
 .idea/
 .vscode/
+
+# Config local del editor/agente
+.claude/
+
+# Certificados locales: NUNCA subir claves privadas
+certs/
+*.pem
+*.key
+*.crt
+
+# Estado local del skill impeccable (puerto de la sesion en curso).
+.impeccable/live/
