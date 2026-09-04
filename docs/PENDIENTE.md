@@ -29,6 +29,9 @@ el contraste del selector y la alineación de las listas. Si aguanta, es la vía
 buena. Si no, componente de terceros **como mejora**, nunca como requisito: si
 falla, se debe volver a pedir la contraseña, no quedarse fuera.
 
+Resolver esto además cierra el hueco del punto 5: sin cookies no se puede atar
+el `state` de Google a un navegador concreto.
+
 ## 2. Traducir, con el idioma elegido en cada clase
 
 **Qué falta.** Hoy el idioma es un ajuste global del `.env` y los apuntes salen
@@ -65,26 +68,42 @@ factura, que cuando haya que reconstruirlo hacia atrás.
 
 ## 5. Entrar con Google
 
-**Estado.** Implementado y probado, pero **inactivo**: no aparece hasta que
-existan `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`.
+**Estado.** Implementado y probado, pero **inactivo**: la opción no aparece
+hasta que existan `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`.
 
-**Lo que lo bloquea de verdad.** La cuenta de Google Cloud disponible es la
-prueba gratuita de **90 días**. Montar el login sobre algo que caduca significa
-que un día deja de funcionar con gente ya dentro. Hay que conseguir otra vía:
-otra cuenta, plan educativo de la UNaM, o un proveedor que no dependa de Google
-Cloud.
+**No está bloqueado por nada.** Se llegó a anotar que la prueba gratuita de 90
+días de Google Cloud lo impedía. Es falso, y conviene dejarlo escrito para no
+volver a perder tiempo buscando alternativas:
 
-**Riesgo conocido y anotado.** El `state` es de un solo uso y lo guarda el
-backend, lo que impide reutilizar un código de otro flujo. Lo que **no** impide,
-por no haber cookies, es atar ese `state` a un navegador concreto: alguien podría
-fabricar un enlace que te meta en *su* cuenta. Se cierra solo cuando se resuelva
-el punto 1.
+- Crear el proyecto y las credenciales OAuth 2.0 **no exige cuenta de
+  facturación**. Los 300 USD / 90 días son para recursos de pago —máquinas,
+  bases—, no para identidad. Es gratis y no caduca.
+- Los scopes que pide la app, `openid email profile`, son **no sensibles**, así
+  que publicarla **no exige el proceso de verificación** de Google, que es lo
+  que suele asustar.
+- La app no pide `access_type=offline` ni usa refresh tokens: hace un solo
+  intercambio del código por el `id_token`. Así que la caducidad de 7 días de
+  los refresh tokens en modo *Testing* no la afecta. Aun así conviene publicar
+  la app, porque en Testing hay tope de 100 usuarios.
+
+**Lo que hay que hacer, entonces:** crear el proyecto, configurar el consent
+screen, sacar client ID y secreto, y ponerlos en el `.env` con
+`run.py --configurar`. Es media hora de consola, no desarrollo.
+
+**Pero conviene hacer antes el punto 1.** El `state` es de un solo uso y lo
+guarda el backend, lo que impide reutilizar un código de otro flujo. Lo que
+**no** impide, por no haber cookies, es atar ese `state` a un navegador
+concreto: alguien podría fabricar un enlace que te meta en *su* cuenta, y las
+clases que subieras irían a parar ahí. Con correo y contraseña ese riesgo no
+existe, así que encender Google antes de resolver las cookies añade una vía de
+entrada peor que la que ya hay.
 
 ## 6. Recuperar la contraseña
 
 No existe, porque no hay envío de correo. Con una cuenta no importa; con dos, sí.
 Necesita un servicio de correo, que es otra dependencia externa y otra clave que
-rotar.
+rotar. Resend, Brevo o Mailgun tienen tier gratuito suficiente para esto;
+[free-for.dev](https://free-for.dev) los lista y compara.
 
 ---
 
