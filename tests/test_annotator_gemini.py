@@ -150,6 +150,41 @@ def test_los_fallos_habituales_se_traducen_a_algo_accionable(mensaje, esperado):
     assert esperado in _explicar_fallo(Exception(mensaje), ajustes)
 
 
+def test_una_clave_restringida_no_se_confunde_con_una_clave_mala():
+    """Son dos problemas distintos y la solucion no se parece en nada.
+
+    Con la clave restringida, decir "revisa la clave" manda a cambiar algo que
+    esta bien. Lo que hay que tocar son las restricciones de la clave en la
+    consola de Google Cloud.
+    """
+    ajustes = Settings(_env_file=None)
+    fallo = (
+        "403 PERMISSION_DENIED. Requests to this API "
+        "generativelanguage.googleapis.com are blocked. "
+        "reason: API_KEY_SERVICE_BLOCKED"
+    )
+
+    explicacion = _explicar_fallo(Exception(fallo), ajustes)
+
+    assert "válida" in explicacion
+    assert "Restricciones de API" in explicacion
+
+
+def test_una_clave_del_formato_viejo_dice_que_formato_hace_falta():
+    """Las claves `AQ.` que emite AI Studio a algunas cuentas no sirven aqui.
+
+    Es un problema abierto de Google, no de esta app, y no se arregla volviendo
+    a pegar la clave: hay que conseguir una `AIza...`.
+    """
+    ajustes = Settings(_env_file=None)
+    fallo = "401 UNAUTHENTICATED. reason: ACCESS_TOKEN_TYPE_UNSUPPORTED"
+
+    explicacion = _explicar_fallo(Exception(fallo), ajustes)
+
+    assert "AQ." in explicacion
+    assert "AIza" in explicacion
+
+
 def test_un_fallo_desconocido_conserva_el_mensaje_original():
     ajustes = Settings(_env_file=None)
 

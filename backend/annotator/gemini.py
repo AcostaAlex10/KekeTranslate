@@ -165,7 +165,28 @@ def _explicar_fallo(exc: Exception | None, settings: Settings) -> str:
     detalle = str(exc) if exc else "sin detalle"
     minusculas = detalle.lower()
 
-    if "api key" in minusculas or "api_key" in minusculas or "401" in detalle:
+    if "api_key_service_blocked" in minusculas:
+        # La clave es correcta; lo que esta mal son sus restricciones. Este caso
+        # iba antes al mismo mensaje que una clave invalida, y mandaba a
+        # cambiar una clave que no tenia nada de malo.
+        pista = (
+            "La clave es válida, pero tiene restringido el acceso a esta API. "
+            "En la consola de Google Cloud, entra en la clave, ve a "
+            "'Restricciones de API' y añade 'Generative Language API' a la "
+            "lista permitida (o quita la restricción). Tarda un par de minutos "
+            "en aplicarse"
+        )
+    elif "api_key_invalid" in minusculas or "access_token_type_unsupported" in minusculas:
+        # Las claves con prefijo `AQ.` que emite AI Studio a algunas cuentas no
+        # sirven para esta API. Es un problema abierto de Google, no de aqui, y
+        # no se arregla volviendo a pegarla: hay que conseguir una `AIza...`.
+        pista = (
+            "Gemini no acepta esta clave. Si empieza por 'AQ.', es el formato "
+            "que esta API rechaza: necesitas una que empiece por 'AIza', y se "
+            "consiguen desde la consola de Google Cloud (APIs y servicios → "
+            "Credenciales) con la Generative Language API habilitada"
+        )
+    elif "api key" in minusculas or "api_key" in minusculas or "401" in detalle:
         pista = (
             "Gemini rechazó la clave. Revisa GEMINI_API_KEY en el .env; "
             "se consigue gratis en https://aistudio.google.com/apikey"
