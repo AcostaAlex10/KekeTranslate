@@ -104,9 +104,19 @@ la cuota del día intacta, se midió esto:
 | Misma llamada, sin ningún parámetro | **503** |
 
 O sea: la misma petición idéntica responde o falla según **cuántas se hayan
-hecho en el último minuto**. No es la longitud, ni los parámetros, ni la cuota
-diaria. Es un **límite de peticiones por minuto** que Google notifica como un
-503 "high demand" en vez de como un 429.
+hecho en el último minuto**. No es la longitud ni los parámetros.
+
+Y hay **dos techos distintos**, que conviene no confundir porque avisan de forma
+muy distinta:
+
+| Techo | Cómo avisa | Se recupera |
+|---|---|---|
+| Peticiones por minuto | `503 UNAVAILABLE — high demand`, que no parece un límite | En un minuto |
+| Peticiones por día | `429 RESOURCE_EXHAUSTED — quota exceeded`, explícito | Al día siguiente |
+
+El primero es el que engaña: el mensaje habla de saturación del modelo y manda a
+reintentar, cuando lo que hay que hacer es ir más despacio. El segundo lo dice
+claro. En una sola tarde de pruebas se llegó a los dos.
 
 Y explica por qué falla justo la anotación: `backend/annotator/base.py` lanza
 los fragmentos **en paralelo** con `asyncio.gather`. Con un límite de dos o tres
@@ -174,6 +184,30 @@ foro oficial desde junio de 2026 pidiendo que lo arreglen.
 **Cómo reconocerlo rápido:** una clave de Gemini válida empieza por `AIza` y
 mide unos 39 caracteres. Si empieza por `AQ.`, no va a funcionar por mucho que
 se pegue bien.
+
+### El programa de la materia sí cambia los apuntes (04/09/2026)
+
+Era la promesa central del producto y hasta ahora solo estaba cubierta por un
+test unitario que comprobaba que el texto llegaba al prompt. Verificado de punta
+a punta con la API real, sobre la misma transcripción, generando los apuntes dos
+veces: una con la clase suelta y otra archivada en el grupo que lleva adjunto
+`programa_analisis_1.pdf`.
+
+La prueba limpia es una frase que solo puede venir del PDF. El programa titula
+su unidad 3 como *"Integrales. **Métodos de integración**"*, y esa expresión:
+
+| Dónde | ¿Aparece? |
+|---|---|
+| En el PDF del programa | Sí |
+| En la transcripción de la clase | **No** |
+| En los apuntes generados **sin** el programa | **No** |
+| En los apuntes generados **con** el programa | **Sí** |
+
+El modelo no pudo sacarla de otro sitio. Además el título de los apuntes pasó de
+*"Análisis Matemático 1: Integración por Partes y Cierre de la Unidad 3"* a
+*"**Unidad 3: Métodos de integración** — Integración por partes y regla LIATE"*,
+o sea que la clase queda situada dentro de la planificación de la cátedra, que
+es exactamente lo que el producto promete.
 
 ### Lo que NO está probado
 

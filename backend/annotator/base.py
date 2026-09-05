@@ -126,18 +126,22 @@ class BaseAnnotator(ABC):
             transcript, self._settings.annotation_chunk_chars
         )
 
-        # Los fragmentos son independientes entre si, asi que se procesan en
-        # paralelo; el orden se restaura al recomponer la lista.
-        partial_tasks = [
-            self._complete(
-                prompts.MAP_SYSTEM_PROMPT,
-                prompts.MAP_USER_PROMPT_TEMPLATE.format(
-                    index=index + 1, total=len(chunks), transcript=chunk
-                ),
-            )
-            for index, chunk in enumerate(chunks)
-        ]
-        partials = await asyncio.gather(*partial_tasks)
+        # Los fragmentos son independientes entre si, pero **no** se lanzan
+        # todos a la vez. El nivel gratuito de Gemini admite muy pocas
+        # peticiones por minuto, asi que dispararlas juntas hacia fallar casi
+        # todas con un 503 que ni siquiera parece un limite de ritmo. El orden
+        # se restaura al recomponer la lista.
+        partials = await self._con_ritmo(
+            [
+                (
+                    prompts.MAP_SYSTEM_PROMPT,
+                    prompts.MAP_USER_PROMPT_TEMPLATE.format(
+                        index=index + 1, total=len(chunks), transcript=chunk
+                    ),
+                )
+                for index, chunk in enumerate(chunks)
+            ]
+        )
 
         joined = "\n\n---\n\n".join(
             f"## Extracto {index + 1} de {len(partials)}\n\n{partial}"
@@ -149,7 +153,45 @@ class BaseAnnotator(ABC):
             partials=joined,
             **metadata,
         )
+        # La fusion es una peticion mas, y llega pisandole los talones a la
+        # ultima del reparto: tambien le toca esperar su turno.
+        await self._respirar()
         return await self._complete(prompts.SYSTEM_PROMPT, reduce_prompt)
+
+    async def _con_ritmo(self, peticiones: list[tuple[str, str]]) -> list[str]:
+        """Ejecuta las peticiones sin superar el ritmo que aguanta el proveedor.
+
+        `annotation_concurrency` marca cuantas pueden estar en vuelo a la vez y
+        `annotation_pause_seconds` cuanto se espera antes de cada una salvo la
+        primera.
+
+        Recibe los prompts y no las corrutinas ya creadas: si una peticion
+        falla, `gather` abandona las demas, y una corrutina creada y nunca
+        esperada deja un aviso y trabajo a medias. Creandolas aqui, la que no
+        llega a ejecutarse tampoco llega a existir.
+        """
+        semaforo = asyncio.Semaphore(max(1, self._settings.annotation_concurrency))
+
+        async def _por_turno(posicion: int, prompts_de_la_peticion) -> str:
+            async with semaforo:
+                if posicion:
+                    await self._respirar()
+                return await self._complete(*prompts_de_la_peticion)
+
+        return list(
+            await asyncio.gather(
+                *(
+                    _por_turno(posicion, par)
+                    for posicion, par in enumerate(peticiones)
+                )
+            )
+        )
+
+    async def _respirar(self) -> None:
+        """Pausa entre peticiones. Aislada para que los tests no esperen."""
+        pausa = max(0.0, self._settings.annotation_pause_seconds)
+        if pausa:
+            await asyncio.sleep(pausa)
 
 
 # ---------------------------------------------------------------------------

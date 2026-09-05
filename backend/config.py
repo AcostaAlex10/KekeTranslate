@@ -67,6 +67,19 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
 
+    # Ritmo con el que se llama al modelo al trocear una clase larga. El nivel
+    # gratuito de Gemini admite muy pocas peticiones por minuto y avisa con un
+    # 503 "high demand" que no parece un limite de ritmo, asi que lanzarlas
+    # todas a la vez hacia fallar casi todas. Medido el 04/09/2026: tras una
+    # pausa, la primera y la segunda responden y la tercera ya no.
+    #
+    # Ir de una en una alarga el procesado unos segundos por fragmento. No
+    # importa: una clase de 4 h tarda entre 10 y 30 minutos de todas formas, y
+    # esto es la diferencia entre que salga y que no. Con un anotador de pago,
+    # que no tiene este techo, se puede subir la concurrencia y bajar la pausa.
+    annotation_concurrency: int = 1
+    annotation_pause_seconds: float = 6.0
+
     max_material_mb: int = 50   # PDFs adjuntos a un grupo.
     backend_url: str = "http://localhost:8000"
 
