@@ -147,6 +147,55 @@ def alinear_las_filas_de_lista() -> None:
 alinear_las_filas_de_lista()
 
 
+def hacer_visibles_los_estados() -> None:
+    """Devuelve contraste al raton encima y al foco de teclado.
+
+    Los dos estados usaban `primaryColor`, que sobre este lienzo casi negro se
+    apaga. Medido: la fila con el raton encima caia a 3.41:1 —o sea que
+    senalarla la hacia *menos* legible que las de al lado— y el anillo de foco
+    quedaba en 1.75:1, por debajo del 3:1 que pide una marca no textual.
+
+    El raton encima pasa a marcarse con un fondo tenue, que es lo que hace
+    cualquier lista, y deja el texto donde estaba. El foco se dibuja con el
+    color del texto, que es lo unico que se ve seguro sobre este fondo.
+
+    `:focus-visible` no es una clase interna de Streamlit sino CSS estandar, y
+    solo se activa cuando se navega con el teclado: quien usa el raton no ve
+    ningun anillo.
+    """
+    # Tanto el raton encima como el foco tinen la etiqueta de `primaryColor`.
+    filas = ", ".join(
+        f'[class*="st-key-{prefijo}"] button:{estado}'
+        for prefijo in ("abrir_", "ir_a_clase_", "sh_abrir_", "volver_al_indice")
+        for estado in ("hover", "focus", "focus-visible", "active")
+    )
+    st.markdown(
+        f"""
+        <style>
+        {filas} {{
+            color: #E6E8EF;
+            background-color: rgba(230, 232, 239, 0.06);
+        }}
+        button:focus-visible,
+        [role="tab"]:focus-visible,
+        [role="radio"]:focus-visible,
+        input:focus-visible,
+        textarea:focus-visible,
+        select:focus-visible,
+        summary:focus-visible {{
+            outline: 2px solid #E6E8EF !important;
+            outline-offset: 2px;
+            box-shadow: none !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+hacer_visibles_los_estados()
+
+
 # ---------------------------------------------------------------------------
 # Cliente del backend
 # ---------------------------------------------------------------------------

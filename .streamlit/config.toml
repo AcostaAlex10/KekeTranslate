@@ -45,4 +45,7 @@ primaryColor = "#1F6FA8"
 # Sans para toda la interfaz. Se probo serif para la prosa de los apuntes y se
 # descarto: Streamlit no permite acotarlo a ese bloque sin depender de las
 # clases internas de su DOM, y aplicarlo a todo envejece los controles.
-font = "sans-serif"
+# "sans serif" con espacio, que es como lo escribe Streamlit. Con el guion en
+# medio no lo reconoce: avisa por consola en cada carga y cae al mismo valor por
+# su cuenta. Funcionaba de casualidad, ensuciando el log.
+font = "sans serif"
