@@ -1,12 +1,17 @@
 """El anotador no puede disparar todas las peticiones a la vez.
 
-El nivel gratuito de Gemini admite muy pocas peticiones por minuto y avisa con
-un `503 high demand` que no parece un limite de ritmo. Lanzar los fragmentos en
-paralelo, que es lo que hacia antes, garantizaba que casi todos fallaran: la
-app no servia con el unico nivel que no se paga.
+Ojo con el porque, que estuvo mal explicado un dia entero. Lo que hacia fallar
+la anotacion **no** era esto: era que `gemini-flash-latest` apuntaba a un modelo
+con un nivel gratuito de veinte peticiones al dia. Eso ya esta arreglado fijando
+la version del modelo, y esta contado en `docs/ESTADO.md`.
 
-Medido el 04/09/2026 con clave y proyecto nuevos: tras una pausa, la primera y
-la segunda llamada responden y la tercera ya no.
+Lo que si sigue valiendo: con una cuota diaria pequena, lanzar los fragmentos en
+paralelo se come una porcion grande de golpe, y los reintentos salen igual de
+juntos. Ir por turnos es un seguro barato.
+
+Y es un seguro que casi nunca se usa: el limite de una sola pasada es de 1,2 M
+caracteres, asi que hasta una clase de cuatro horas entra en una unica peticion.
+Estos tests cubren el camino que solo se pisa con grabaciones descomunales.
 """
 
 from __future__ import annotations

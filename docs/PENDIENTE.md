@@ -4,7 +4,7 @@ Ordenado por lo que desbloquea, no por lo que cuesta. Cada punto dice **qué**,
 **por qué** y **qué hay que decidir antes de empezar**, porque lo que más tiempo
 cuesta después es reconstruir el porqué.
 
-Actualizado el 2026-09-04. El estado de lo que ya funciona está en
+Actualizado el 2026-09-05. El estado de lo que ya funciona está en
 [`ESTADO.md`](ESTADO.md); el contexto de producto, en [`../PRODUCT.md`](../PRODUCT.md).
 
 ---
@@ -24,7 +24,7 @@ salidas, y por qué ninguna es gratis:
 | Componente de cookies de terceros | Resuelve hoy | La puerta de entrada queda colgando de un paquete ajeno con fama de caprichoso |
 | Subir Streamlit a 1.42+ | `st.context.cookies` es de la casa | Hay que revalidar los enganches de CSS (`st-key-…`, `data-testid`) de los que depende la interfaz |
 
-**Recomendado:** probar 1.42+ en una rama, correr los 186 tests y revisar a ojo
+**Recomendado:** probar 1.42+ en una rama, correr los 192 tests y revisar a ojo
 el contraste del selector y la alineación de las listas. Si aguanta, es la vía
 buena. Si no, componente de terceros **como mejora**, nunca como requisito: si
 falla, se debe volver a pedir la contraseña, no quedarse fuera.
