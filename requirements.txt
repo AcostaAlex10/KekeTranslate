@@ -18,7 +18,12 @@ argon2-cffi>=23.1           # Hash de contrasenas (Argon2id, lo que recomienda O
 pypdf>=5.1                  # Extraer el texto de los PDF para que la IA los lea
 
 # --- Frontend ---
-streamlit==1.41.1
+streamlit==1.42.2           # 1.42 es la primera con `st.context.cookies`
+
+# No se sube mas alla de 1.42.x mientras el backend siga en FastAPI 0.115: a
+# partir de 1.43 Streamlit exige starlette >= 0.46 y FastAPI 0.115 exige < 0.42.
+# Se probo 1.63 y rompe el backend entero. Subir mas obliga a subir FastAPI
+# tambien, y eso es otra tanda con su propia verificacion.
 
 # --- Utilidades / tests ---
 python-dotenv==1.0.1
