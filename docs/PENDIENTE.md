@@ -24,15 +24,39 @@ salidas, y por qué ninguna es gratis:
 | Componente de cookies de terceros | Resuelve hoy | La puerta de entrada queda colgando de un paquete ajeno con fama de caprichoso |
 | Subir Streamlit a 1.42+ | `st.context.cookies` es de la casa | Hay que revalidar los enganches de CSS (`st-key-…`, `data-testid`) de los que depende la interfaz |
 
-**Recomendado:** probar 1.42+ en una rama, correr los 183 tests y revisar a ojo
+**Recomendado:** probar 1.42+ en una rama, correr los 186 tests y revisar a ojo
 el contraste del selector y la alineación de las listas. Si aguanta, es la vía
 buena. Si no, componente de terceros **como mejora**, nunca como requisito: si
 falla, se debe volver a pedir la contraseña, no quedarse fuera.
 
-Resolver esto además cierra el hueco del punto 5: sin cookies no se puede atar
+Resolver esto además cierra el hueco del punto 6: sin cookies no se puede atar
 el `state` de Google a un navegador concreto.
 
-## 2. Traducir, con el idioma elegido en cada clase
+## 2. Los fragmentos salen todos a la vez y el nivel gratuito los rechaza
+
+**Qué pasa hoy.** `backend/annotator/base.py` reparte la transcripción en
+fragmentos y los lanza **en paralelo** con `asyncio.gather`. Tiene sentido
+—son independientes— pero el nivel gratuito de Gemini admite del orden de dos
+peticiones por minuto, así que casi todas vuelven con un 503. Los reintentos,
+que también salen a la vez, chocan contra el mismo techo.
+
+**Cómo se midió.** Con clave y proyecto nuevos, cuota diaria intacta: tras una
+pausa, las dos primeras llamadas responden y la tercera da 503. La misma
+petición, idéntica, según cuántas haya habido en el último minuto. Está en
+[`ESTADO.md`](ESTADO.md) con la tabla.
+
+**Por qué importa.** Es lo que impide que la app funcione con el nivel gratuito,
+que es la única forma de usarla sin pagar. Hoy una clase larga falla casi seguro.
+
+**Qué haría falta.** Procesar los fragmentos de uno en uno, o con un tope de
+concurrencia y una pausa entre ellos. El procesado ya tarda entre 10 y 30
+minutos: unos segundos más entre llamadas no cambian nada para quien espera, y
+son la diferencia entre que salga y que no.
+
+**Sin decidir:** si el ritmo se fija a mano o se adapta según el proveedor —
+Claude, de pago, no tiene este techo y no habría por qué frenarlo.
+
+## 3. Traducir, con el idioma elegido en cada clase
 
 **Qué falta.** Hoy el idioma es un ajuste global del `.env` y los apuntes salen
 en el idioma de la clase. Está decidido que el idioma de salida se elige **por
@@ -44,7 +68,7 @@ clase**, no una vez para todo.
 conserva además la transcripción en el idioma original. Cambia el modelo de
 datos: o un campo más en `Job`, o dos trabajos enlazados.
 
-## 3. La grabadora integrada no aguanta una clase
+## 4. La grabadora integrada no aguanta una clase
 
 **Qué pasa hoy.** Guarda sin comprimir y no envía nada hasta que se para. Una
 clase de 4 h son unos 2,5 GB en la memoria del navegador. Solo sirve para
@@ -57,7 +81,7 @@ teléfono grabando. Hoy hay que grabar con la app del móvil y subir el fichero.
 `MediaRecorder` y un endpoint que reciba partes. Es un componente propio de
 Streamlit, no un widget de los que trae.
 
-## 4. Medir el consumo por persona
+## 5. Medir el consumo por persona
 
 **Por qué ahora.** Está decidido que se va a cobrar. Con las cuentas ya se sabe
 de quién es cada clase, que era el requisito previo; falta contar los minutos
@@ -66,7 +90,7 @@ transcritos y los caracteres generados por cuenta.
 **Ojo:** es más fácil hacerlo ahora, mientras hay una sola cuenta y ninguna
 factura, que cuando haya que reconstruirlo hacia atrás.
 
-## 5. Entrar con Google
+## 6. Entrar con Google
 
 **Estado.** Implementado y probado, pero **inactivo**: la opción no aparece
 hasta que existan `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`.
@@ -98,7 +122,7 @@ clases que subieras irían a parar ahí. Con correo y contraseña ese riesgo no
 existe, así que encender Google antes de resolver las cookies añade una vía de
 entrada peor que la que ya hay.
 
-## 6. Recuperar la contraseña
+## 7. Recuperar la contraseña
 
 No existe, porque no hay envío de correo. Con una cuenta no importa; con dos, sí.
 Necesita un servicio de correo, que es otra dependencia externa y otra clave que
@@ -117,10 +141,14 @@ Ninguna es desarrollo; todas son media hora y cierran una duda.
   firewall de Windows, que pide permisos de administrador.
 - **El anotador de Claude** contra su API real. Solo se ha usado Gemini.
 - **Un PDF de verdad de la cátedra**, no el de prueba de 3 páginas.
+- **Que el programa adjunto cambie los apuntes.** Verificado a medias el
+  04/09/2026: el contexto **sí llega al prompt** —`materia='Analisis Matematico
+  I'` y el texto del PDF, 854 caracteres—, pero la comparación de los apuntes
+  con y sin él quedó bloqueada por el punto 2. En cuanto eso se arregle, el
+  experimento está listo para correr.
 
 ## Higiene
 
-- Fusionar `biblioteca-y-apuntes` a `main`, o abrir el PR.
 - `/impeccable polish`: es el paso que el propio skill pide después de `layout`.
   Cerraría estados sueltos —vacíos, foco de teclado, la lista con 200 clases.
 - Un detalle que no tiene arreglo limpio: el campo de nombre de clase muestra

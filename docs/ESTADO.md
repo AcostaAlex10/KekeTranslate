@@ -92,11 +92,29 @@ clave, el mismo día:
 | Petición de apuntes completos (salida larga) | **503** |
 | "Escribe 500 palabras" | **503** |
 
-No es el modelo, ni el tamaño de la entrada, ni los parámetros: es la
-**longitud de la generación**, que es justo lo que hace esta app. Una de las
-pruebas devolvió `429 RESOURCE_EXHAUSTED — You exceeded your current quota`,
-así que lo más probable es que sea la cuota gratuita del día, agotada por las
-pruebas repetidas y notificada de forma inconsistente como 503 "high demand".
+**Corregido el 04/09/2026.** Aquella conclusión —"es la longitud de la
+generación"— era falsa. Con una clave y un proyecto recién creados, o sea con
+la cuota del día intacta, se midió esto:
+
+| Prueba | Resultado |
+|---|---|
+| Tras 90 s sin tocar la API, primera llamada | OK, 4.052 caracteres |
+| Segunda llamada seguida | OK, 3.982 caracteres |
+| Tercera llamada seguida | **503** |
+| Misma llamada, sin ningún parámetro | **503** |
+
+O sea: la misma petición idéntica responde o falla según **cuántas se hayan
+hecho en el último minuto**. No es la longitud, ni los parámetros, ni la cuota
+diaria. Es un **límite de peticiones por minuto** que Google notifica como un
+503 "high demand" en vez de como un 429.
+
+Y explica por qué falla justo la anotación: `backend/annotator/base.py` lanza
+los fragmentos **en paralelo** con `asyncio.gather`. Con un límite de dos o tres
+por minuto, disparar N a la vez garantiza que casi todas fallen; y los
+reintentos, que también salen a la vez, vuelven a chocar contra el mismo techo.
+
+El arreglo no es esperar más: es **no lanzarlas todas juntas**. Está anotado en
+`PENDIENTE.md`.
 
 Importa porque el mensaje de error decía "está saturado, vuelve a intentarlo",
 que manda a reintentar en bucle sin éxito. Ahora el mensaje nombra la cuota y
