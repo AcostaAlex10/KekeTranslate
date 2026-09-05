@@ -145,7 +145,7 @@ proveedor de transcripción y la del anotador:
 | `ANNOTATOR_PROVIDER` | — | `gemini` | `gemini` (nivel gratuito, por defecto) o `anthropic` (de pago) |
 | `ANTHROPIC_API_KEY` | ✅ *(si usas Anthropic)* | — | [console.anthropic.com](https://console.anthropic.com/) |
 | `GEMINI_API_KEY` | ✅ *(si usas Gemini)* | — | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — gratis |
-| `GEMINI_MODEL` | — | `gemini-flash-latest` | Modelo de Gemini. El alias `-latest` evita quedarse en un modelo retirado o saturado |
+| `GEMINI_MODEL` | — | `gemini-3.7-flash` | Modelo de Gemini. Versión fija a propósito: el alias `-latest` apunta al modelo más nuevo, y esos traen un nivel gratuito de 20 peticiones al día |
 | `GEMINI_MAX_TOKENS` | — | `32000` | Longitud máxima de los apuntes |
 | `ANTHROPIC_MODEL` | — | `claude-opus-5` | Modelo del anotador |
 | `ANTHROPIC_EFFORT` | — | `high` | `low`, `medium`, `high`, `xhigh` o `max` |

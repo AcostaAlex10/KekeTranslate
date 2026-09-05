@@ -79,57 +79,62 @@ reconoció la línea existente y añadió otra. Pydantic no distingue mayúscula
 la app arrancaba igual, de modo que el síntoma habría aparecido mucho después,
 al editar la línea equivocada y ver que no pasaba nada.
 
-### El nivel gratuito de Gemini no da respuestas largas
+### El alias `gemini-flash-latest` costaba la cuota entera (05/09/2026)
 
-Comprobado por bisección, no por suposición. Con el mismo modelo y la misma
-clave, el mismo día:
+Este apartado tuvo dos explicaciones anteriores y las dos eran falsas. Se dejan
+nombradas porque el camino equivocado enseña tanto como el bueno:
 
-| Petición | Resultado |
+1. *"El nivel gratuito no entrega respuestas largas."* Falso: una petición de
+   600 palabras respondía y otra idéntica, minutos después, no.
+2. *"Es un límite de peticiones por minuto."* Falso: se dedujo de ver dos
+   llamadas buenas y una mala tras una pausa, que es exactamente lo que parece
+   una cuota diaria agotándose.
+
+**Lo que de verdad pasaba**, leído del propio mensaje de Google en vez de
+deducido:
+
+```
+429 RESOURCE_EXHAUSTED
+metric: generativelanguage.googleapis.com/generate_content_free_tier_requests
+limit: 20
+```
+
+**Veinte peticiones al día.** Medido el mismo minuto, con la misma clave:
+
+| Modelo | Resultado |
 |---|---|
-| Entrada corta, salida corta | OK |
-| Clase entera, resumen en 5 puntos | OK |
-| Clase entera, `max_output_tokens` 32 000 | OK |
-| Petición de apuntes completos (salida larga) | **503** |
-| "Escribe 500 palabras" | **503** |
+| `gemini-flash-latest` | 429 · límite **20/día** |
+| `gemini-3.8-flash` | 429 · límite **20/día** |
+| `gemini-3.7-flash` | responde |
+| `gemini-3.6-flash` | responde |
 
-**Corregido el 04/09/2026.** Aquella conclusión —"es la longitud de la
-generación"— era falsa. Con una clave y un proyecto recién creados, o sea con
-la cuota del día intacta, se midió esto:
+El alias apunta al modelo más nuevo, y los modelos nuevos llegan con un nivel
+gratuito raquítico. Se había elegido `-latest` justamente para no quedarse en un
+modelo retirado; el remedio salió peor que la enfermedad. Ahora se fija
+`gemini-3.7-flash`, y el riesgo de que se retire ya estaba cubierto: ante un 404
+el mensaje de error dice qué modelo poner, tomando el nombre de la propia
+respuesta de Google.
 
-| Prueba | Resultado |
-|---|---|
-| Tras 90 s sin tocar la API, primera llamada | OK, 4.052 caracteres |
-| Segunda llamada seguida | OK, 3.982 caracteres |
-| Tercera llamada seguida | **503** |
-| Misma llamada, sin ningún parámetro | **503** |
+**Los 503 sueltos siguen existiendo** y son de verdad saturación pasajera: en la
+prueba de punta a punta aparecieron dos y los reintentos los absorbieron sin que
+el usuario notara nada.
 
-O sea: la misma petición idéntica responde o falla según **cuántas se hayan
-hecho en el último minuto**. No es la longitud ni los parámetros.
+### El reparto por turnos, probado contra la API real (05/09/2026)
 
-Y hay **dos techos distintos**, que conviene no confundir porque avisan de forma
-muy distinta:
+`_map_reduce` lanzaba todos los fragmentos a la vez con `asyncio.gather`. No era
+la causa del problema de arriba, pero sí una forma de amplificarlo: cuatro
+peticiones simultáneas contra una cuota de veinte al día se comen la quinta
+parte de un golpe, y los reintentos salen igual de juntos.
 
-| Techo | Cómo avisa | Se recupera |
-|---|---|---|
-| Peticiones por minuto | `503 UNAVAILABLE — high demand`, que no parece un límite | En un minuto |
-| Peticiones por día | `429 RESOURCE_EXHAUSTED — quota exceeded`, explícito | Al día siguiente |
+Ahora van por turnos, con `annotation_concurrency` y `annotation_pause_seconds`.
+Verificado forzando el troceado sobre una transcripción real: **3 fragmentos más
+la fusión, 7.352 caracteres en 247 s**, con algún 503 absorbido por los
+reintentos.
 
-El primero es el que engaña: el mensaje habla de saturación del modelo y manda a
-reintentar, cuando lo que hay que hacer es ir más despacio. El segundo lo dice
-claro. En una sola tarde de pruebas se llegó a los dos.
-
-Y explica por qué falla justo la anotación: `backend/annotator/base.py` lanza
-los fragmentos **en paralelo** con `asyncio.gather`. Con un límite de dos o tres
-por minuto, disparar N a la vez garantiza que casi todas fallen; y los
-reintentos, que también salen a la vez, vuelven a chocar contra el mismo techo.
-
-El arreglo no es esperar más: es **no lanzarlas todas juntas**. Está anotado en
-`PENDIENTE.md`.
-
-Importa porque el mensaje de error decía "está saturado, vuelve a intentarlo",
-que manda a reintentar en bucle sin éxito. Ahora el mensaje nombra la cuota y
-apunta al botón de reintento. Más tarde el mismo día la cuota se recuperó y la
-generación completa funcionó.
+Vale la pena saber que **el troceado casi nunca se activa**: el límite de una
+sola pasada es de 1,2 M caracteres, así que hasta una clase de cuatro horas
+—unos 180 000— entra en una única petición. Esto es un seguro, no el camino
+habitual.
 
 ### El nivel gratuito de Gemini no es la prueba de 90 días (04/09/2026)
 
@@ -147,7 +152,7 @@ Gemini, así que nada de lo que usa esta app depende de él ni se muere con él.
 
 Los límites reales del nivel gratuito, que sí importan: unas **250 peticiones
 al día** por clave, y **solo modelos Flash** —los Pro pasaron a exigir
-facturación en mayo de 2026—. Esta app usa `gemini-flash-latest`, así que cae
+facturación en mayo de 2026—. Esta app usa `gemini-3.7-flash`, así que cae
 justo dentro.
 
 **La consecuencia práctica:** al crear el proyecto en la consola de Google

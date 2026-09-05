@@ -50,11 +50,21 @@ class Settings(BaseSettings):
 
     # --- Anotador: Google Gemini (alternativa gratuita) ---
     gemini_api_key: str = ""
-    # Alias, no una version concreta: Google lo mantiene apuntando al modelo
-    # flash vigente. Fijar una version tiene dos problemas comprobados: se
-    # retira sin aviso para las cuentas nuevas (la serie 2.5 ya devuelve 404) y
-    # concentra la carga, asi que devuelve 503 cuando hay demanda alta.
-    gemini_model: str = "gemini-flash-latest"
+    # Version fija, no el alias `gemini-flash-latest`. Se uso el alias para no
+    # quedarse en un modelo retirado, y salio caro: el alias apunta siempre al
+    # modelo mas nuevo, y los mas nuevos llegan con un nivel gratuito raquitico.
+    # Medido el 05/09/2026, la misma clave y el mismo minuto:
+    #
+    #   gemini-flash-latest -> 429, limite 20 peticiones al dia
+    #   gemini-3.8-flash    -> 429, limite 20 (es a donde apuntaba el alias)
+    #   gemini-3.7-flash    -> responde
+    #   gemini-3.6-flash    -> responde
+    #
+    # Con veinte al dia, media docena de clases agotan la cuota. El riesgo de
+    # fijar la version es que algun dia se retire y devuelva 404, pero eso ya
+    # esta cubierto: el mensaje de error dice que modelo poner en su lugar,
+    # usando el nombre que sugiere la propia respuesta de Google.
+    gemini_model: str = "gemini-3.7-flash"
     gemini_max_tokens: int = 32_000
     # Baja: los apuntes deben ceñirse a lo que se dijo en clase, no inventar.
     gemini_temperature: float = 0.3

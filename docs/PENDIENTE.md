@@ -109,12 +109,6 @@ rotar. Resend, Brevo o Mailgun tienen tier gratuito suficiente para esto;
 
 ## Verificaciones que nunca se hicieron
 
-- **Que el reparto por turnos baste para el nivel gratuito.** El cambio está
-  hecho y cubierto por seis tests, pero probarlo contra la API de verdad quedó
-  a medias: se agotó la cuota **diaria** de Gemini (`429`) durante las pruebas.
-  El experimento está escrito y compara las dos configuraciones —todo en
-  paralelo contra una a una—; hay que correrlo cuando la cuota se renueve.
-
 Ninguna es desarrollo; todas son media hora y cierran una duda.
 
 - **Una clase real de 4 horas**, de punta a punta. Lo más largo probado son 4,5
