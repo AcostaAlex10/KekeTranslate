@@ -42,6 +42,9 @@ SEGUNDOS_ENTRE_REFRESCOS = 15
 # perderse. Y los apuntes son justo aquello para lo que existe el producto: leer
 # una clase de cuatro horas. `centered` acota el ancho por si solo, sin depender
 # de las clases internas del DOM de Streamlit.
+# El icono de la pestana del navegador sigue siendo un emoji: Streamlit solo
+# acepta emoji o una imagen ahi, y mantener un fichero propio para 16 pixeles no
+# se justifica.
 st.set_page_config(page_title="KekeTranslate", page_icon="🎓", layout="centered")
 
 
@@ -334,10 +337,12 @@ def _mostrar_transcripcion_rescatada(job_id: str, filename: str) -> None:
             height=320,
             key=f"tx_fallida_{job_id}",
             label_visibility="collapsed",
+            disabled=True,
         )
 
     st.download_button(
-        "⬇️ Descargar transcripción (.txt)",
+        "Descargar transcripción (.txt)",
+        icon=":material/download:",
         data=transcripcion,
         file_name=f"{filename}_transcripcion.txt",
         mime="text/plain",
@@ -349,7 +354,11 @@ def _mostrar_transcripcion_rescatada(job_id: str, filename: str) -> None:
 
 def _ofrecer_reintento(job_id: str) -> None:
     """Boton para rehacer los apuntes de un trabajo que fallo al anotar."""
-    if not st.button("🔁 Reintentar apuntes", key=f"reintentar-{job_id}"):
+    if not st.button(
+        "Reintentar apuntes",
+        key=f"reintentar-{job_id}",
+        icon=":material/refresh:",
+    ):
         return
 
     try:
@@ -388,13 +397,33 @@ def limite_efectivo_mb() -> int:
     return min(topes) if topes else 0
 
 
+# Iconos de Material Symbols, que Streamlit trae dentro. Antes eran emojis, y un
+# emoji no es un sistema de iconos: cada uno viene de una familia distinta, con
+# su trazo y su color propios, y un lector de pantalla lee "check mark" o "cross
+# mark" en lugar del estado.
+# Solo los dos estados finales llevan color, y son los de siempre en esta app:
+# verde lo que salio bien, rojo lo que fallo. Lo que esta en curso se queda en
+# el color del texto, porque no es ni una cosa ni la otra y tenirlo de ambar lo
+# convertiria en un aviso que no es. El color nunca va solo: la fila dice el
+# estado en palabras al lado de la fecha.
 ICONOS_DE_ESTADO = {
-    "pending": "⏳",
-    "uploading": "📤",
-    "transcribing": "🎙️",
-    "annotating": "🧠",
-    "completed": "✅",
-    "failed": "❌",
+    "pending": ":material/schedule:",
+    "uploading": ":material/upload:",
+    "transcribing": ":material/mic:",
+    "annotating": ":material/neurology:",
+    "completed": ":green[:material/check_circle:]",
+    "failed": ":red[:material/error:]",
+}
+
+# El estado en palabras. El icono solo no basta: se lee mal en voz alta y obliga
+# a recordar que significa cada dibujo.
+PALABRA_DE_ESTADO = {
+    "pending": "En cola",
+    "uploading": "Subiendo",
+    "transcribing": "Transcribiendo",
+    "annotating": "Escribiendo apuntes",
+    "completed": "Lista",
+    "failed": "Falló",
 }
 
 ETIQUETAS_EN_CURSO = {
@@ -518,7 +547,7 @@ def transcurrido_desde(marca_iso: str) -> str:
 # Barra lateral: configuracion activa
 # ---------------------------------------------------------------------------
 
-st.sidebar.title("🎓 KekeTranslate")
+st.sidebar.title("KekeTranslate")
 st.sidebar.caption("Transcripción y apuntes automáticos de clases largas.")
 
 salud = api_get("/api/health")
@@ -605,7 +634,9 @@ def vista_compartida(grupo: dict, token: str) -> None:
                 ):
                     st.session_state["clase_compartida"] = clase["id"]
                     st.rerun()
-                fila_meta.caption(f"{fecha_corta(clase['created_at'])} · {ambito}")
+                fila_meta.caption(
+                    f"{fecha_corta(clase['created_at'])} · {ambito}"
+                )
 
             st.divider()
             abierta = next(
@@ -647,8 +678,10 @@ def vista_compartida(grupo: dict, token: str) -> None:
                 opciones = {"Sin tema": None}
                 opciones.update({t["nombre"]: t["id"] for t in temas})
                 tema = opciones[st.selectbox("Tema", list(opciones))]
-                if st.form_submit_button("Añadir nota") and titulo.strip():
-                    if api_llamar(
+                if st.form_submit_button("Añadir nota"):
+                    if not titulo.strip():
+                        st.warning("Ponle un título a la nota antes de añadirla.")
+                    elif api_llamar(
                         "POST",
                         f"/api/compartido/{token}/notas",
                         json={
@@ -800,7 +833,7 @@ def _boton_de_google() -> None:
 
 def pantalla_de_entrada() -> None:
     """Lo único que se ve sin cuenta, además de un enlace compartido."""
-    st.title("🎓 KekeTranslate")
+    st.title("KekeTranslate")
     st.caption(
         "Tus clases grabadas, convertidas en apuntes. Privados salvo que "
         "decidas compartirlos."
@@ -873,11 +906,22 @@ st.session_state["usuario"] = _yo
 # deja la navegacion entera detras de un boton de 32 px sin nombre accesible.
 # Quien abria la app en el telefono no tenia ninguna pista de que existieran
 # otras secciones.
-SECCIONES = ["📤 Nueva clase", "📚 Mis clases", "🗂️ Grupos"]
+# Las opciones son identidades, no etiquetas: lo que se guarda en la sesion es
+# "clases", y el texto con su icono se decide al dibujar. Antes la opcion *era*
+# el texto, asi que cambiar una palabra invalidaba el estado guardado y rompia
+# los tests, que no tenian mas remedio que repetir la cadena exacta.
+SECCIONES = ["nueva", "clases", "grupos"]
+
+ETIQUETA_DE_SECCION = {
+    "nueva": ":material/upload: Nueva clase",
+    "clases": ":material/library_books: Mis clases",
+    "grupos": ":material/folder: Grupos",
+}
 
 seccion = st.radio(
     "Sección",
     SECCIONES,
+    format_func=ETIQUETA_DE_SECCION.get,
     key="seccion",
     horizontal=True,
     label_visibility="collapsed",
@@ -914,7 +958,7 @@ elif faltan_claves:
 # esta— sin ocupar sitio en una barra que en el movil cabe justa.
 _yo_visible = st.session_state["usuario"]
 st.sidebar.caption(
-    f"👤 {_yo_visible['nombre'] or _yo_visible['email']}",
+    f":material/person: {_yo_visible['nombre'] or _yo_visible['email']}",
     help=_yo_visible["email"],
 )
 if st.sidebar.button("Salir", key="salir", use_container_width=True):
@@ -922,7 +966,7 @@ if st.sidebar.button("Salir", key="salir", use_container_width=True):
     st.rerun()
 
 if salud:
-    st.sidebar.caption("✅ Servidor conectado")
+    st.sidebar.caption(":material/check_circle: Servidor conectado")
 
     with st.sidebar.expander("Configuración activa"):
         st.markdown(
@@ -1030,7 +1074,7 @@ def mostrar_apuntes(detalle: dict, filename: str) -> None:
     if editados is not None:
         st.info("Estás viendo tu versión corregida, no la que escribió la IA.")
 
-    editando = st.toggle("✏️ Editar", key=f"editar_{job_id}")
+    editando = st.toggle("Editar los apuntes", key=f"editar_{job_id}")
 
     if editando:
         texto = st.text_area(
@@ -1041,13 +1085,20 @@ def mostrar_apuntes(detalle: dict, filename: str) -> None:
             label_visibility="collapsed",
         )
         columnas = st.columns(3)
-        if columnas[0].button("💾 Guardar", key=f"guardar_{job_id}", type="primary"):
+        if columnas[0].button(
+            "Guardar",
+            key=f"guardar_{job_id}",
+            type="primary",
+            icon=":material/save:",
+        ):
             if api_llamar(
                 "PUT", f"/api/jobs/{job_id}/notes", json={"contenido": texto}
             ) is not None:
                 st.rerun()
         if editados is not None and columnas[1].button(
-            "↩️ Volver al original", key=f"revertir_{job_id}"
+            "Volver al original",
+            key=f"revertir_{job_id}",
+            icon=":material/undo:",
         ):
             if api_llamar("DELETE", f"/api/jobs/{job_id}/notes") is not None:
                 st.rerun()
@@ -1056,7 +1107,8 @@ def mostrar_apuntes(detalle: dict, filename: str) -> None:
 
     columna_descarga, columna_rehacer = st.columns(2)
     columna_descarga.download_button(
-        "⬇️ Descargar apuntes (.md)",
+        "Descargar apuntes (.md)",
+        icon=":material/download:",
         data=apuntes,
         file_name=f"{filename}_apuntes.md",
         mime="text/markdown",
@@ -1068,7 +1120,7 @@ def mostrar_apuntes(detalle: dict, filename: str) -> None:
     with columna_rehacer:
         if confirmar_borrado(
             f"rehacer_{job_id}",
-            "🔁 Rehacer con la IA",
+            "Rehacer con la IA",
             "Se van a descartar los apuntes actuales y la IA los escribirá otra "
             "vez. La transcripción no se toca. Tus correcciones a mano tampoco: "
             "se guardan aparte.",
@@ -1099,13 +1151,17 @@ if seccion == SECCIONES[0]:
 
     modo = st.radio(
         "Cómo quieres cargar la clase",
-        ["🎙️ Grabar ahora", "📁 Subir un fichero"],
+        ["grabar", "subir"],
+        format_func={
+            "grabar": ":material/mic: Grabar ahora",
+            "subir": ":material/folder_open: Subir un fichero",
+        }.get,
         key="modo_de_carga",
         horizontal=True,
         label_visibility="collapsed",
     )
 
-    if modo == "🎙️ Grabar ahora":
+    if modo == "grabar":
         st.markdown(
             "Deja el teléfono cerca de quien habla y empieza a grabar. Al "
             "parar, la grabación se envía sola a transcribir."
@@ -1121,7 +1177,7 @@ if seccion == SECCIONES[0]:
 
             destino = elegir_destino("grabacion")
 
-            if st.button("🚀 Transcribir y generar apuntes", type="primary"):
+            if st.button("Transcribir y generar apuntes", type="primary"):
                 encolar(grabacion, nombre=nombre, grupo_id=destino[0], tema_id=destino[1])
 
         st.warning(
@@ -1150,7 +1206,7 @@ if seccion == SECCIONES[0]:
 
             destino = elegir_destino("fichero")
 
-            if st.button("🚀 Transcribir y generar apuntes", type="primary"):
+            if st.button("Transcribir y generar apuntes", type="primary"):
                 encolar(archivo, grupo_id=destino[0], tema_id=destino[1])
 
     st.divider()
@@ -1175,6 +1231,18 @@ CLASES_PARA_FILTRAR = 8
 
 SIN_ARCHIVAR = "Sin archivar"
 TODAS_LAS_MATERIAS = "Todas las materias"
+
+
+def dato_util_de(clase: dict) -> str:
+    """Lo que conviene saber de una clase de un vistazo.
+
+    Si esta lista, cuanto dura, que es lo que ayuda a elegir. Si no, en que
+    estado va, **con palabras**: el icono solo obliga a recordar que significa
+    cada dibujo, y en voz alta no dice nada util.
+    """
+    if clase["status"] == "completed":
+        return formatear_duracion(clase.get("audio_duration_seconds"))
+    return PALABRA_DE_ESTADO.get(clase["status"], "En proceso")
 
 
 def abrir_clase(job_id: str) -> None:
@@ -1210,7 +1278,7 @@ def indice_de_clases(trabajos: list[dict], grupos: dict[str, dict]) -> None:
         busqueda = sin_acentos(
             columna_busqueda.text_input(
                 "Buscar una clase",
-                placeholder="🔎 Buscar por nombre",
+                placeholder="Buscar por nombre",
                 key="buscar_clase",
                 label_visibility="collapsed",
             ).strip()
@@ -1277,8 +1345,7 @@ def indice_de_clases(trabajos: list[dict], grupos: dict[str, dict]) -> None:
                 st.session_state["clase_abierta"] = clase["id"]
                 st.rerun()
             fila_fecha.caption(
-                f"{fecha_corta(clase['created_at'])} · "
-                f"{formatear_duracion(clase.get('audio_duration_seconds'))}"
+                f"{fecha_corta(clase['created_at'])} · {dato_util_de(clase)}"
             )
 
     if len(visibles) > TOPE_EN_LISTA:
@@ -1295,7 +1362,12 @@ def ficha_de_clase(resumen: dict) -> None:
     desplegable este abierto o cerrado: con treinta clases se pedian treinta
     fichas completas —transcripcion y apuntes enteros— para leer una.
     """
-    if st.button("← Todas las clases", key="volver_al_indice", type="tertiary"):
+    if st.button(
+        "Todas las clases",
+        key="volver_al_indice",
+        type="tertiary",
+        icon=":material/arrow_back:",
+    ):
         st.session_state["clase_abierta"] = None
         st.rerun()
 
@@ -1373,24 +1445,33 @@ def ficha_de_clase(resumen: dict) -> None:
     # que las inactivas.
     vista = st.segmented_control(
         "Qué quieres ver",
-        ["📝 Apuntes", "📄 Transcripción"],
-        default="📝 Apuntes",
+        ["apuntes", "texto"],
+        format_func={
+            "apuntes": ":material/description: Apuntes",
+            "texto": ":material/subject: Transcripción",
+        }.get,
+        default="apuntes",
         key=f"vista_{resumen['id']}",
         label_visibility="collapsed",
     )
 
     nombre_fichero = nombre_para_fichero(nombre_de(detalle))
 
-    if vista == "📄 Transcripción":
+    if vista == "texto":
         transcripcion = detalle.get("transcript_diarized") or ""
         st.text_area(
             "Transcripción con oradores y marcas de tiempo",
             value=transcripcion,
             height=420,
             key=f"tx_{resumen['id']}",
+            # Se puede seleccionar y copiar, pero no editar: no hay nada que
+            # guarde los cambios, asi que dejarla editable prometia algo falso.
+            # Lo que si se puede corregir son los apuntes, y eso tiene su boton.
+            disabled=True,
         )
         st.download_button(
-            "⬇️ Descargar transcripción (.txt)",
+            "Descargar transcripción (.txt)",
+        icon=":material/download:",
             data=transcripcion,
             file_name=f"{nombre_fichero}_transcripcion.txt",
             mime="text/plain",
@@ -1496,29 +1577,35 @@ def panel_material(grupo_id: str, temas: list[dict]) -> None:
             "Se aplica a", list(opciones), key=f"mat_tema_{grupo_id}"
         )
 
-        if st.form_submit_button("Adjuntar") and pdf is not None:
-            if len(pdf.getvalue()) > tope_mb * 1024 * 1024:
-                st.error(
-                    f"{pdf.name} pesa {len(pdf.getvalue()) / 1e6:.0f} MB y el "
-                    f"máximo son {tope_mb} MB. Un PDF tan grande suele ser un "
-                    "escaneo, y de un escaneo la IA no puede leer nada."
+        if st.form_submit_button("Adjuntar"):
+            # Antes, pulsar sin haber elegido fichero no hacia nada: ni
+            # error, ni mensaje, ni pista. Un boton que a veces no hace
+            # nada ensena a desconfiar de todos los demas.
+            if pdf is None:
+                st.warning("Elige un PDF antes de adjuntarlo.")
+            else:
+                if len(pdf.getvalue()) > tope_mb * 1024 * 1024:
+                    st.error(
+                        f"{pdf.name} pesa {len(pdf.getvalue()) / 1e6:.0f} MB y el "
+                        f"máximo son {tope_mb} MB. Un PDF tan grande suele ser un "
+                        "escaneo, y de un escaneo la IA no puede leer nada."
+                    )
+                    st.stop()
+                datos = {"tipo": tipo}
+                if opciones[tema]:
+                    datos["tema_id"] = opciones[tema]
+                resultado = api_llamar(
+                    "POST",
+                    f"/api/grupos/{grupo_id}/materiales",
+                    files={"file": (pdf.name, pdf.getvalue(), "application/pdf")},
+                    data=datos,
                 )
-                st.stop()
-            datos = {"tipo": tipo}
-            if opciones[tema]:
-                datos["tema_id"] = opciones[tema]
-            resultado = api_llamar(
-                "POST",
-                f"/api/grupos/{grupo_id}/materiales",
-                files={"file": (pdf.name, pdf.getvalue(), "application/pdf")},
-                data=datos,
-            )
-            if resultado:
-                st.success(
-                    f"**{resultado['filename']}** adjuntado: "
-                    f"{resultado['paginas']} páginas leídas por la IA."
-                )
-                st.rerun()
+                if resultado:
+                    st.success(
+                        f"**{resultado['filename']}** adjuntado: "
+                        f"{resultado['paginas']} páginas leídas por la IA."
+                    )
+                    st.rerun()
 
     materiales = api_get(f"/api/grupos/{grupo_id}/materiales") or []
     if not materiales:
@@ -1563,13 +1650,14 @@ def panel_notas(grupo_id: str, temas: list[dict]) -> None:
             st.selectbox("Tema", list(opciones), key=f"nota_tema_{grupo_id}")
         ]
 
-        if st.form_submit_button("Añadir nota") and titulo.strip():
-            creada = api_llamar(
+        if st.form_submit_button("Añadir nota"):
+            if not titulo.strip():
+                st.warning("Ponle un título a la nota antes de añadirla.")
+            elif api_llamar(
                 "POST",
                 f"/api/grupos/{grupo_id}/notas",
                 json={"titulo": titulo, "contenido": contenido, "tema_id": tema},
-            )
-            if creada:
+            ):
                 st.rerun()
 
     notas = api_get(f"/api/grupos/{grupo_id}/notas") or []
@@ -1737,7 +1825,10 @@ def panel_grupo(grupo: dict) -> None:
                 on_click=abrir_clase,
                 args=(clase["id"],),
             )
-            fila_meta.caption(f"{fecha_corta(clase['created_at'])} · {ambito}")
+            fila_meta.caption(
+                f"{fecha_corta(clase['created_at'])} · {ambito} · "
+                f"{dato_util_de(clase)}"
+            )
         if clases:
             st.caption("Pulsa una clase para abrir sus apuntes.")
 
@@ -1748,8 +1839,10 @@ def panel_grupo(grupo: dict) -> None:
                 placeholder="Unidad 3: Integrales",
                 key=f"tema_nombre_{grupo['id']}",
             )
-            if st.form_submit_button("Añadir tema") and nombre.strip():
-                if api_llamar(
+            if st.form_submit_button("Añadir tema"):
+                if not nombre.strip():
+                    st.warning("Ponle un nombre al tema antes de añadirlo.")
+                elif api_llamar(
                     "POST",
                     f"/api/grupos/{grupo['id']}/temas",
                     json={"nombre": nombre},
@@ -1824,7 +1917,7 @@ if seccion == SECCIONES[2]:
         # contenido de un grupo (material, notas) ya los usa por dentro.
         etiquetas = {
             f"{g['materia']} · {g['nombre']}"
-            + ("  🔗 compartido" if g["share_token"] else ""): g
+            + ("  ·  compartido" if g["share_token"] else ""): g
             for g in grupos
         }
         elegido = st.selectbox("Grupo", list(etiquetas), key="grupo_abierto")
@@ -1835,7 +1928,7 @@ if seccion == SECCIONES[2]:
         st.divider()
         if confirmar_borrado(
             f"grupo_{grupo['id']}",
-            "🗑️ Borrar el grupo",
+            "Borrar el grupo",
             f"Se va a borrar **{grupo['materia']} · {grupo['nombre']}** con sus "
             "temas, su material y tus notas, y no hay forma de recuperarlo. "
             "Las clases transcritas **no** se borran: quedan sin archivar.",

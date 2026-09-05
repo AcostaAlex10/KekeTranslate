@@ -41,7 +41,7 @@ def backend(monkeypatch):
 def _abrir(backend, **estado):
     app = AppTest.from_file(APP, default_timeout=90)
     app.session_state["sesion"] = TESTIGO
-    app.session_state["seccion"] = "📚 Mis clases"
+    app.session_state["seccion"] = "clases"
     for clave, valor in estado.items():
         app.session_state[clave] = valor
     app.run()

@@ -134,12 +134,12 @@ def test_ofrece_grabar_y_subir(app):
 
 def test_el_modo_por_defecto_es_grabar(app):
     """Grabar es el caso principal: dejar el movil en el aula y olvidarse."""
-    assert "Grabar" in radio_de(app, "modo_de_carga").value
+    assert radio_de(app, "modo_de_carga").value == "grabar"
     assert app.get("audio_input"), "falta el widget de grabacion"
 
 
 def test_al_elegir_fichero_aparece_el_selector(app):
-    resultado = radio_de(app, "modo_de_carga").set_value("📁 Subir un fichero").run()
+    resultado = radio_de(app, "modo_de_carga").set_value("subir").run()
 
     assert not resultado.exception
     assert resultado.get("file_uploader"), "falta el selector de ficheros"
