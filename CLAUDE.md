@@ -69,13 +69,20 @@ se dijo. `tests/test_idioma_de_los_apuntes.py` lo fija.
 —troceado, metadatos, map-reduce— vive en las clases `base.py`, y cada proveedor
 solo implementa la llamada.
 
-**Tres almacenes sobre un único fichero SQLite** (`storage/keketranslate.db`):
+**Cuatro almacenes sobre un único fichero SQLite** (`storage/keketranslate.db`):
 
 | Clase | Tablas | Detalle |
 |---|---|---|
 | `store.JobStore` | `jobs` | El `Job` se guarda como **JSON en una columna `payload`** |
 | `biblioteca.Biblioteca` | `grupos`, `temas`, `materiales`, `notas` | Columnas normales |
 | `usuarios.Usuarios` | `usuarios`, `sesiones`, `estados_oauth` | Argon2id, testigos opacos |
+| `consumo.Consumo` | `consumo` | Libro de cuentas: **se apunta, no se deriva** |
+
+El consumo es un **libro de cuentas, no un dato derivado**: se apunta lo que
+ocurrió, con su fecha, y no se recalcula desde los trabajos. Por eso borrar una
+clase no borra lo que costó, y por eso se apunta también lo gastado antes de un
+fallo. Toda llamada al modelo pasa por `BaseAnnotator._llamar`, que la cuenta:
+un anotador nuevo queda medido sin hacer nada.
 
 Trampa conocida: añadir un campo a `Job` **no** basta. `JobStore.list()`
 construye el `JobSummary` a mano campo por campo, así que hay que añadirlo ahí

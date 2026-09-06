@@ -294,6 +294,43 @@ a lo que escribe la IA, por diseño. Parecía que cambiar el idioma no hacía na
 Ahora el aviso de «estás viendo tu versión corregida» dice en qué idioma están
 los de la IA y cómo llegar a ellos.
 
+### Ya se mide lo que gasta cada cuenta (06/09/2026)
+
+Se apuntan dos cosas, que son las dos que cuestan dinero: los **minutos de audio
+transcritos** —la transcripción se paga por minuto— y las **peticiones al
+modelo** que costó redactar los apuntes, con los caracteres que entraron y
+salieron. Se ve en la barra lateral y se consulta en `GET /api/consumo`.
+
+Se hace ahora, con una cuenta y ninguna factura, porque **no se puede
+reconstruir hacia atrás**: los minutos de una clase ya procesada se podrían
+deducir de su duración, pero cuántas peticiones costó redactar sus apuntes no lo
+sabe nadie una vez ha pasado.
+
+**Tres decisiones que separan esto de un contador ingenuo:**
+
+- **Se apunta también lo que falló.** Si la anotación se cae en el cuarto
+  fragmento de una clase larga, los tres primeros salieron y se pagaron. Un
+  contador que solo mire los éxitos da de menos justo en los meses en los que el
+  proveedor falla, que son los meses en los que uno mira la factura.
+- **Borrar una clase no borra lo que costó.** Es un libro de cuentas, no un dato
+  derivado de los trabajos: el proveedor ya cobró.
+- **Toda llamada al modelo pasa por un solo sitio** (`BaseAnnotator._llamar`),
+  así que un anotador nuevo queda medido sin hacer nada; solo tiene que
+  implementar `_complete`.
+
+Lo enviado se cuenta **antes** de enviarlo, para que una petición que revienta
+aparezca. A cambio puede contar de más, porque un 503 no siempre se cobra; se
+prefiere ese error, que avisa de un gasto que quizá no hubo, al contrario. Un
+reintento interno del proveedor cuenta como una sola petición.
+
+**El libro empieza hoy.** Las clases que ya existían salen con cero, y el panel
+no aparece hasta que hay algo que enseñar: un contador a cero no informa de
+nada. No se rellenó hacia atrás a propósito, porque solo se puede reconstruir la
+mitad y un total a medias engaña más que un cero.
+
+Se comprobó además que el esquema nuevo se aplica limpio sobre la base de datos
+real —sobre una copia— sin tocar nada de lo que ya había.
+
 ### Lo que NO está probado
 
 - El anotador de **Claude** con llamadas reales (sí el de Gemini).

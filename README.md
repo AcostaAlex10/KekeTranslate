@@ -88,6 +88,7 @@ KekeTranslate/
 │   ├── store.py                   # Persistencia de las clases en SQLite
 │   ├── biblioteca.py              # Grupos, temas, material y notas
 │   ├── usuarios.py                # Cuentas, contrasenas y sesiones
+│   ├── consumo.py                 # Libro de cuentas: minutos y peticiones por cuenta
 │   ├── pdf.py                     # Extraer el texto de los PDF adjuntos
 │   ├── pipeline.py                # Orquestación audio → transcripción → apuntes
 │   ├── media.py                   # ffmpeg: duración y segmentación
@@ -272,6 +273,7 @@ curl -H "Authorization: Bearer $TESTIGO" \
 | `GET` \| `POST` | `/api/auth/google` | Entrar con Google, si el servidor lo tiene configurado |
 | `POST` | `/api/jobs` | Sube una grabación y encola el trabajo (`?idioma=en` para pedir los apuntes traducidos) |
 | `GET` | `/api/jobs` | Lista los trabajos recientes |
+| `GET` | `/api/consumo` | Lo que ha consumido tu cuenta: este mes y desde siempre |
 | `GET` | `/api/jobs/{id}` | Estado completo, transcripción y apuntes |
 | `GET` | `/api/jobs/{id}/notes` | Apuntes en Markdown |
 | `GET` | `/api/jobs/{id}/transcript` | Transcripción con oradores y tiempos |

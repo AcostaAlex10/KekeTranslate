@@ -4,9 +4,16 @@ Ordenado por lo que desbloquea, no por lo que cuesta. Cada punto dice **qué**,
 **por qué** y **qué hay que decidir antes de empezar**, porque lo que más tiempo
 cuesta después es reconstruir el porqué.
 
-Actualizado el 2026-09-06. Dos puntos salieron hoy de esta lista y están
+Actualizado el 2026-09-06. Tres puntos salieron hoy de esta lista y están
 contados en [`ESTADO.md`](ESTADO.md): que la sesión no sobrevivía a recargar la
-página, y la traducción de los apuntes.
+página, la traducción de los apuntes, y la medición del consumo por cuenta.
+
+Del consumo queda lo que no es código: **el modelo de cobro**. Los números ya se
+guardan; qué se cobra por ellos y cuánto es una decisión de negocio. Y una
+salvedad: el libro empieza hoy, así que las clases que ya existían aparecen con
+cero. Se decidió no rellenarlas hacia atrás porque solo se puede reconstruir la
+mitad —los minutos de audio— y no lo que costó redactar sus apuntes; un total a
+medias engaña más que un cero.
 
 De la traducción queda una decisión abierta, apuntada en
 [`../PRODUCT.md`](../PRODUCT.md): si además se ofrece la **transcripción**
@@ -29,16 +36,7 @@ teléfono grabando. Hoy hay que grabar con la app del móvil y subir el fichero.
 `MediaRecorder` y un endpoint que reciba partes. Es un componente propio de
 Streamlit, no un widget de los que trae.
 
-## 2. Medir el consumo por persona
-
-**Por qué ahora.** Está decidido que se va a cobrar. Con las cuentas ya se sabe
-de quién es cada clase, que era el requisito previo; falta contar los minutos
-transcritos y los caracteres generados por cuenta.
-
-**Ojo:** es más fácil hacerlo ahora, mientras hay una sola cuenta y ninguna
-factura, que cuando haya que reconstruirlo hacia atrás.
-
-## 3. Entrar con Google
+## 2. Entrar con Google
 
 **Estado.** Implementado y probado, pero **inactivo**: la opción no aparece
 hasta que existan `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`.
@@ -69,7 +67,7 @@ ahí. Ahora hay cookies, así que al encender Google conviene aprovecharlas para
 eso. El `state` sigue siendo de un solo uso y lo guarda el backend, que es lo
 que impide reutilizar un código de otro flujo.
 
-## 4. Recuperar la contraseña
+## 3. Recuperar la contraseña
 
 No existe, porque no hay envío de correo. Con una cuenta no importa; con dos, sí.
 Necesita un servicio de correo, que es otra dependencia externa y otra clave que

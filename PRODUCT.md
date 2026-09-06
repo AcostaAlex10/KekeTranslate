@@ -110,8 +110,9 @@ Tres cosas que un transcriptor genérico no hace:
 
 **Decisiones tomadas, todavía sin implementar**
 
-- **Se contempla cobrar** por el uso. Con las cuentas ya se sabe de quién es
-  cada clase, que era el requisito previo; falta medir el consumo.
+- **Se contempla cobrar** por el uso. Ya se mide el consumo de cada cuenta
+  —minutos de audio transcritos y peticiones al modelo—, que era el requisito
+  previo. Lo que falta es el modelo de cobro, que es una decisión de negocio.
 
 **Sin decidir**
 
@@ -119,7 +120,9 @@ Tres cosas que un transcriptor genérico no hace:
   traduce nunca, y ese es el comportamiento correcto por defecto: la
   transcripción es el registro de lo que se dijo. Ofrecer una traducida sería
   añadir algo, no cambiar esto, y costaría otra pasada entera del modelo.
-- El modelo concreto de cobro y cuándo llegan las cuentas de usuario.
+- El modelo concreto de cobro y cuándo llegan las cuentas de usuario. Los
+  números ya se están guardando; lo que no está decidido es qué se cobra por
+  ellos ni cuánto.
 - Qué pasa con las clases de varias voces simultáneas o con audio malo.
 
 ## Brand Commitments
