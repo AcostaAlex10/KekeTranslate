@@ -792,10 +792,19 @@ def guardar_sesion(respuesta: dict) -> None:
 
 
 def cerrar_sesion() -> None:
+    """Cierra la sesion aqui y en el servidor, y vuelve a la pantalla de entrar.
+
+    El `st.rerun()` no es un detalle. El boton de salir esta arriba del todo,
+    asi que sin el la pasada que atiende el clic sigue dibujando la app entera
+    con la sesion ya cerrada: los apuntes desaparecian, las listas salian
+    vacias y el boton de salir seguia ahi, como si el clic no hubiera hecho
+    nada.
+    """
     api_llamar("POST", "/api/auth/salir")
     for clave in ("sesion", "usuario", "clase_abierta"):
         st.session_state.pop(clave, None)
     refrescar()
+    st.rerun()
 
 
 def _volver_de_google() -> None:
