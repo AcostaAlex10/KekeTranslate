@@ -257,6 +257,43 @@ entrar con la cookie ya borrada; y una cookie con un testigo que el servidor no
 reconoce, que muestra «Tu sesión ha caducado» y la borra. Sin errores en la
 consola.
 
+### Los apuntes ya salen en el idioma que se pida (06/09/2026)
+
+El idioma se elige **en cada clase**, al subirla, y se puede cambiar después
+desde *Rehacer con la IA*, que es la única forma de traducir sin volver a pagar
+la transcripción.
+
+**Lo que no se traduce, y es la mitad importante:** la transcripción. Se queda
+siempre en el idioma en que se dio la clase. Es el registro de lo que se dijo y
+es a donde se vuelve cuando un apunte no se entiende; además, traducirla
+costaría otra pasada entera del modelo sobre 50–70k tokens. Hay un test que lo
+fija, para que nadie lo cambie sin querer.
+
+**Probado contra Gemini de verdad**, no solo con tests: una clase corta de
+integración por partes, en español, pidiendo los apuntes en inglés. Salieron en
+inglés, encabezados incluidos, y respetando el matiz que pide el prompt: la
+terminología técnica aparece traducida con el término original al lado la
+primera vez —*«integration by parts (integración por partes)»*—, y la etiqueta
+del orador se quedó como estaba, *Profesor*. La primera llamada necesitó tres
+reintentos por un 503 de Gemini, que es el comportamiento ya conocido.
+
+**Dos detalles del diseño que no se ven desde fuera:**
+
+- En una clase tan larga que active el map-reduce, los extractos de trabajo
+  intermedios **no** se traducen: la traducción ocurre una sola vez, al
+  fusionarlos. Traducir cada fragmento sería traducir dos veces, y cada paso
+  intermedio aleja el texto de lo que se dijo.
+- El nombre del idioma viaja al prompt junto a su endónimo —«inglés (English)»,
+  «alemán (Deutsch)»—. El prompt está escrito en español, y pedir «redacta en
+  alemán» a secas deja margen a que el modelo escriba *sobre* el alemán.
+
+**Un aviso que hubo que añadir en la interfaz.** Si una clase tiene apuntes
+corregidos a mano y se le cambia el idioma, la traducción se genera pero en
+pantalla sigue la versión propia, en el idioma de antes: las correcciones ganan
+a lo que escribe la IA, por diseño. Parecía que cambiar el idioma no hacía nada.
+Ahora el aviso de «estás viendo tu versión corregida» dice en qué idioma están
+los de la IA y cómo llegar a ellos.
+
 ### Lo que NO está probado
 
 - El anotador de **Claude** con llamadas reales (sí el de Gemini).

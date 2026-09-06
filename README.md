@@ -270,12 +270,12 @@ curl -H "Authorization: Bearer $TESTIGO" \
 | `GET` | `/api/auth/yo` | Quién es el dueño del testigo |
 | `POST` | `/api/auth/contrasena` | Pone o cambia la contraseña; cierra el resto de sesiones |
 | `GET` \| `POST` | `/api/auth/google` | Entrar con Google, si el servidor lo tiene configurado |
-| `POST` | `/api/jobs` | Sube una grabación y encola el trabajo |
+| `POST` | `/api/jobs` | Sube una grabación y encola el trabajo (`?idioma=en` para pedir los apuntes traducidos) |
 | `GET` | `/api/jobs` | Lista los trabajos recientes |
 | `GET` | `/api/jobs/{id}` | Estado completo, transcripción y apuntes |
 | `GET` | `/api/jobs/{id}/notes` | Apuntes en Markdown |
 | `GET` | `/api/jobs/{id}/transcript` | Transcripción con oradores y tiempos |
-| `POST` | `/api/jobs/{id}/reanotar` | Rehace solo los apuntes, sin volver a transcribir |
+| `POST` | `/api/jobs/{id}/reanotar` | Rehace solo los apuntes, sin volver a transcribir. Con `?idioma=` cambia el idioma; vacío vuelve al de la clase |
 | `PUT` | `/api/jobs/{id}/notes` | Guarda la versión corregida a mano |
 | `PATCH` | `/api/jobs/{id}/ubicacion` | Archiva la clase en un grupo y tema |
 | `PATCH` | `/api/jobs/{id}/titulo` | Le pone nombre a la clase |

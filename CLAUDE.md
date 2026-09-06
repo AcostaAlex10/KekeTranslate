@@ -60,6 +60,10 @@ Streamlit ──subida en bloques──► FastAPI ──tarea en segundo plano�
 `POST /api/jobs/{id}/reanotar` rehace solo los apuntes. Cualquier cambio en el
 pipeline debe preservar esa propiedad.
 
+**Y la transcripción no se traduce nunca.** `Job.idioma_apuntes` cambia el
+idioma de los apuntes y solo de ellos: la transcripción es el registro de lo que
+se dijo. `tests/test_idioma_de_los_apuntes.py` lo fija.
+
 **Proveedores intercambiables por `.env`.** `transcription/factory.py` y
 `annotator/factory.py` eligen implementación; la lógica común
 —troceado, metadatos, map-reduce— vive en las clases `base.py`, y cada proveedor

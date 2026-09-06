@@ -77,6 +77,10 @@ Tres cosas que un transcriptor genérico no hace:
 - Los apuntes generados se pueden editar a mano; la versión corregida se guarda
   aparte de la de la IA y sobrevive a rehacer los apuntes.
 - Reintento de la anotación reutilizando la transcripción ya pagada.
+- **Apuntes traducidos, con el idioma elegido en cada clase.** Se puede cursar
+  en un idioma y recibir los apuntes en otro, y se puede cambiar después sin
+  volver a transcribir. La **transcripción no se traduce nunca**: es el registro
+  de lo que se dijo y es a donde se vuelve cuando un apunte no se entiende.
 - Enlace para compartir un grupo, con permiso de lectura o de escritura a
   elección de quien lo creó, revocable.
 
@@ -106,16 +110,15 @@ Tres cosas que un transcriptor genérico no hace:
 
 **Decisiones tomadas, todavía sin implementar**
 
-- **Traducir es parte del producto.** El nombre no es histórico: se contempla
-  cursar en un idioma y recibir los apuntes en otro. El **idioma de salida se
-  elige en cada clase**, no una vez para todo. Hoy el idioma es un ajuste global
-  del `.env` y los apuntes salen en el idioma de la clase.
 - **Se contempla cobrar** por el uso. Con las cuentas ya se sabe de quién es
   cada clase, que era el requisito previo; falta medir el consumo.
 
 **Sin decidir**
 
-- Si al traducir se conserva además la transcripción en el idioma original.
+- Si además de los apuntes se ofrece la **transcripción traducida**. Hoy no se
+  traduce nunca, y ese es el comportamiento correcto por defecto: la
+  transcripción es el registro de lo que se dijo. Ofrecer una traducida sería
+  añadir algo, no cambiar esto, y costaría otra pasada entera del modelo.
 - El modelo concreto de cobro y cuándo llegan las cuentas de usuario.
 - Qué pasa con las clases de varias voces simultáneas o con audio malo.
 
