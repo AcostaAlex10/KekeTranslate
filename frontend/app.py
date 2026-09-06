@@ -1150,6 +1150,45 @@ st.sidebar.caption(
     f":material/person: {_yo_visible['nombre'] or _yo_visible['email']}",
     help=_yo_visible["email"],
 )
+
+
+def panel_de_consumo() -> None:
+    """Lo que lleva gastado esta cuenta, en la barra lateral.
+
+    Hoy es informativo: no hay factura ni tope. Existe porque esta decidido que
+    se va a cobrar, y porque el gasto no se puede reconstruir hacia atras.
+    Ensenarlo desde el principio evita ademas la sorpresa del primer recibo.
+
+    Cuesta una peticion por pantalla, y es una peticion diminuta: dos sumas
+    sobre una tabla pequena. `tests/test_coste_de_pantalla.py` fija que sea una
+    y no una por clase.
+    """
+    resumen = api_get("/api/consumo")
+    if not resumen:
+        return
+
+    mes, total = resumen["mes"], resumen["total"]
+    if not total["clases_transcritas"]:
+        # Cuenta recien creada: un contador a cero no informa de nada.
+        return
+
+    clases = mes["clases_transcritas"]
+    st.sidebar.caption(
+        f":material/monitoring: Este mes: {clases} "
+        f"{'clase' if clases == 1 else 'clases'}"
+        f" · {formatear_duracion(mes['segundos_de_audio'])}",
+        help=(
+            f"Desde siempre: {total['clases_transcritas']} clases y "
+            f"{formatear_duracion(total['segundos_de_audio'])} de audio "
+            f"transcritos, con {total['peticiones_al_modelo']} peticiones al "
+            "modelo para redactar los apuntes. Se mide el audio porque la "
+            "transcripción se paga por minuto."
+        ),
+    )
+
+
+panel_de_consumo()
+
 if st.sidebar.button("Salir", key="salir", use_container_width=True):
     cerrar_sesion()
     st.rerun()
