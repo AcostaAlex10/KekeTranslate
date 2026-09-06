@@ -57,7 +57,7 @@ from .pdf import PdfSinTexto, extraer_texto
 from .pipeline import reanotar_job, run_job
 from .store import JobStore
 from .tls import usar_certificados_del_sistema
-from .usuarios import ErrorDeCuenta, Usuarios
+from .usuarios import DIAS_DE_SESION, ErrorDeCuenta, Usuarios
 
 logging.basicConfig(
     level=logging.INFO,
@@ -193,6 +193,9 @@ async def health(settings: Settings = Depends(get_settings)) -> dict:
         "diarization_enabled": settings.enable_diarization,
         "max_upload_mb": settings.max_upload_mb,
         "max_material_mb": settings.max_material_mb,
+        # Lo lee la interfaz para no dejar su cookie de sesion viva mas tiempo
+        # del que el servidor va a aceptar el testigo que hay dentro.
+        "dias_de_sesion": DIAS_DE_SESION,
         # Se informa de si faltan claves sin exponer su valor.
         "transcription_key_configured": clave_completa(_provider_key(settings)),
         "annotator_key_configured": clave_completa(clave_del_anotador(settings)),

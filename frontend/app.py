@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import unicodedata
 from datetime import datetime
 
@@ -219,6 +220,117 @@ def testigo() -> str:
 
 def _cabeceras(testigo_de_sesion: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {testigo_de_sesion}"} if testigo_de_sesion else {}
+
+
+# ---------------------------------------------------------------------------
+# Recordar la sesion entre recargas
+# ---------------------------------------------------------------------------
+
+# `st.session_state` no sobrevive a un F5, asi que sin esto cada recarga
+# devolvia a la pantalla de entrar. El testigo se guarda en una cookie, y hay
+# dos rarezas de Streamlit que gobiernan todo este bloque:
+#
+# - **Solo sabe leer cookies.** `st.context.cookies` no tiene contraparte para
+#   escribir, asi que la cookie se pone desde el navegador, con un componente
+#   de altura cero que toca el documento padre igual que `declarar_idioma`.
+# - **Lee las de la peticion inicial**, no las de ahora. Durante toda la sesion
+#   devuelve siempre lo mismo aunque el navegador ya las haya cambiado. De ahi
+#   que la cookie se mire **una sola vez**: releyendola en cada pasada, cerrar
+#   sesion no serviria de nada, porque la cookie recien borrada seguiria
+#   apareciendo ahi y volveria a meter a la persona en su cuenta.
+#
+# Lo que esto no es: una cookie `HttpOnly`. Solo puede ponerlas el servidor que
+# sirve la pagina, y el backend vive en otro origen —otro puerto—, asi que una
+# cookie suya no llegaria nunca al servidor de Streamlit. El testigo queda
+# legible por el JavaScript de esta pagina; se acota con `SameSite=Lax`, con
+# `Secure` cuando la pagina va por https, y con que el testigo se puede revocar
+# desde el servidor en cualquier momento.
+
+COOKIE_DE_SESION = "keke_sesion"
+
+# Un testigo es un `secrets.token_urlsafe`: letras, digitos, guion y guion
+# bajo, nada mas. Comprobarlo antes de escribirlo impide que un valor con `;`
+# se invente atributos de cookie, y hace que un cambio de formato del testigo
+# se note aqui en vez de producir una cookie silenciosamente rota.
+FORMA_DEL_TESTIGO = re.compile(r"^[A-Za-z0-9_-]{16,512}$")
+
+# Cuanto vive la cookie si el backend no dice cuanto dura una sesion. Se elige
+# corto a proposito: la regla es que la cookie caduque igual o antes que el
+# testigo que lleva dentro, nunca despues, y ante la duda lo unico seguro es
+# quedarse corto. Lo peor que pasa es tener que volver a entrar.
+DIAS_DE_COOKIE_POR_DEFECTO = 1
+
+
+def _cookies_del_navegador() -> dict[str, str]:
+    """Las cookies que traia la peticion inicial de esta pestana."""
+    try:
+        return dict(st.context.cookies)
+    except Exception:  # pragma: no cover - fuera de `streamlit run` no hay
+        # Recordar la sesion es una comodidad: si el runtime no ofrece cookies,
+        # se entra a mano y ya esta, pero la app no puede caerse por eso.
+        return {}
+
+
+def recuperar_la_sesion() -> None:
+    """Rescata el testigo de la cookie al cargar la pagina.
+
+    No comprueba que siga vivo: de eso ya se encarga la llamada a
+    `/api/auth/yo` mas abajo, que ante un testigo caducado o revocado devuelve
+    a la pantalla de entrar. Es deliberado que el peor caso sea ese y no
+    quedarse fuera.
+    """
+    if st.session_state.get("cookie_ya_mirada"):
+        return
+    st.session_state["cookie_ya_mirada"] = True
+
+    guardado = _cookies_del_navegador().get(COOKIE_DE_SESION, "")
+    if FORMA_DEL_TESTIGO.match(guardado):
+        st.session_state["sesion"] = guardado
+
+
+def _guion_de_cookie(valor: str, segundos: int) -> str:
+    """El JavaScript que pone o quita la cookie en el documento padre.
+
+    `Secure` se decide en el navegador y no aqui porque el servidor de
+    Streamlit no sabe por que esquema le llego la pagina. Poniendolo siempre,
+    la cookie se perderia en `http://localhost`, que es como se usa la app hoy.
+    """
+    cookie = f"{COOKIE_DE_SESION}={valor}; Max-Age={segundos}; Path=/; SameSite=Lax"
+    return (
+        "<script>(function () {"
+        " var documento = window.parent.document;"
+        " var seguro = window.parent.location.protocol === 'https:' ? '; Secure' : '';"
+        f" documento.cookie = {json.dumps(cookie)} + seguro;"
+        "})();</script>"
+    )
+
+
+def dias_de_cookie(salud_del_servidor: dict | None) -> int:
+    """Cuanto puede vivir la cookie, segun lo que dure una sesion alli."""
+    dias = (salud_del_servidor or {}).get("dias_de_sesion")
+    return dias if isinstance(dias, int) and dias > 0 else DIAS_DE_COOKIE_POR_DEFECTO
+
+
+def recordar_la_sesion(dias: int) -> None:
+    """Deja el testigo en una cookie para la proxima carga de la pagina.
+
+    Se llama en cada pasada, no solo al entrar: asi la cookie renueva su plazo
+    con cada visita, igual que hace el servidor con `ultimo_uso`, y las dos
+    caducidades se mueven juntas. Ademas, llamarla al entrar no valdria: esa
+    pasada termina en `st.rerun()` y lo dibujado se descarta.
+    """
+    testigo_actual = testigo()
+    if not FORMA_DEL_TESTIGO.match(testigo_actual):
+        return
+    components.html(_guion_de_cookie(testigo_actual, dias * 86_400), height=0)
+
+
+def olvidar_la_sesion() -> None:
+    """Borra la cookie. `Max-Age=0` es como se le pide eso a un navegador."""
+    components.html(_guion_de_cookie("", 0), height=0)
+
+
+recuperar_la_sesion()
 
 
 @st.cache_data(ttl=SEGUNDOS_DE_CACHE, show_spinner="Cargando…")
@@ -798,7 +910,8 @@ def cerrar_sesion() -> None:
     asi que sin el la pasada que atiende el clic sigue dibujando la app entera
     con la sesion ya cerrada: los apuntes desaparecian, las listas salian
     vacias y el boton de salir seguia ahi, como si el clic no hubiera hecho
-    nada.
+    nada. Ademas, es esta vuelta la que llega a la pantalla de entrar, que es
+    donde se borra la cookie.
     """
     api_llamar("POST", "/api/auth/salir")
     for clave in ("sesion", "usuario", "clase_abierta"):
@@ -905,6 +1018,12 @@ def pantalla_de_entrada() -> None:
         st.code("python run.py", language="bash")
         return
 
+    # Aqui se esta fuera y el servidor contesta, asi que la cookie que hubiera
+    # ya no vale para nada: o caduco, o se acaba de cerrar sesion. Se borra
+    # justo aqui y no en `cerrar_sesion` porque aquella pasada termina en un
+    # `st.rerun()` que descarta lo dibujado.
+    olvidar_la_sesion()
+
     columna, _ = st.columns([3, 2])
     with columna:
         modo = st.radio(
@@ -921,8 +1040,8 @@ def pantalla_de_entrada() -> None:
         _boton_de_google()
 
     st.caption(
-        "La sesión dura mientras esta pestaña siga abierta. Al recargar la "
-        "página hay que volver a entrar."
+        f"La sesión queda guardada en este navegador {dias_de_cookie(salud)} "
+        "días. Si el equipo es compartido, sal de la cuenta al terminar."
     )
 
 
@@ -945,6 +1064,11 @@ if not _yo:
     st.stop()
 
 st.session_state["usuario"] = _yo
+
+# La sesion es buena: se renueva la cookie para que la proxima recarga entre
+# sola. Va en cada pasada, no solo al entrar, para que su plazo se mueva a la
+# vez que el del servidor.
+recordar_la_sesion(dias_de_cookie(salud))
 
 
 # ---------------------------------------------------------------------------

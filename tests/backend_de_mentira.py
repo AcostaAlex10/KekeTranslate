@@ -16,6 +16,13 @@ from urllib.parse import urlparse
 
 TESTIGO = "testigo-de-prueba"
 
+# Lo que se puede pedir sin haber entrado, igual que `RUTAS_ABIERTAS` en el
+# backend de verdad. `/api/auth/yo` queda fuera a proposito: alli tambien pide
+# identidad, y es justo la ruta que decide si un testigo guardado sigue
+# valiendo.
+RUTAS_SIN_SESION = ("/api/health", "/api/auth/entrar", "/api/auth/registro",
+                    "/api/auth/google", "/api/compartido/")
+
 USUARIO = {
     "id": "u1",
     "email": "alumno@unam.edu.ar",
@@ -41,8 +48,17 @@ def normalizar(ruta: str) -> str:
 class BackendDeMentira:
     """Sirve la API en un puerto libre y cuenta las peticiones que recibe."""
 
-    def __init__(self, clases: int = 12, grupos: int = 1) -> None:
+    def __init__(
+        self,
+        clases: int = 12,
+        grupos: int = 1,
+        testigo: str = TESTIGO,
+        dias_de_sesion: int | None = 30,
+    ) -> None:
         self.peticiones: Counter = Counter()
+        self.testigo = testigo
+        # `None` imita a un backend viejo que todavia no informa de esto.
+        self.dias_de_sesion = dias_de_sesion
         ahora = datetime.now(timezone.utc)
 
         self.grupos = [
@@ -76,6 +92,7 @@ class BackendDeMentira:
 
         contador = self.peticiones
         cuerpo = self._cuerpo
+        testigo_bueno = self.testigo
 
         class Manejador(BaseHTTPRequestHandler):
             def log_message(self, *_args):  # sin ruido en la salida del test
@@ -84,8 +101,20 @@ class BackendDeMentira:
             def _servir(self):
                 ruta = urlparse(self.path).path
                 contador[normalizar(ruta)] += 1
-                datos = json.dumps(cuerpo(ruta)).encode()
-                self.send_response(200)
+                if ruta.startswith(RUTAS_SIN_SESION):
+                    self._responder(200, cuerpo(ruta))
+                elif self._testigo() == testigo_bueno:
+                    self._responder(200, cuerpo(ruta))
+                else:
+                    self._responder(401, {"detail": "Necesitas entrar en tu cuenta."})
+
+            def _testigo(self) -> str:
+                tipo, _, valor = self.headers.get("Authorization", "").partition(" ")
+                return valor.strip() if tipo.lower() == "bearer" else ""
+
+            def _responder(self, codigo: int, cuerpo_json) -> None:
+                datos = json.dumps(cuerpo_json).encode()
+                self.send_response(codigo)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(datos)))
                 self.end_headers()
@@ -100,7 +129,13 @@ class BackendDeMentira:
 
     def _cuerpo(self, ruta: str):
         if ruta == "/api/health":
+            dias = (
+                {"dias_de_sesion": self.dias_de_sesion}
+                if self.dias_de_sesion is not None
+                else {}
+            )
             return {
+                **dias,
                 "status": "ok",
                 "transcription_provider": "assemblyai",
                 "transcription_key_configured": True,
