@@ -35,7 +35,7 @@ USUARIO = {
 RUTAS_CONOCIDAS = {
     "api", "jobs", "grupos", "temas", "materiales", "notas", "health",
     "notes", "transcript", "compartido", "ubicacion", "titulo", "clases",
-    "auth", "yo", "google", "entrar", "registro", "salir",
+    "auth", "yo", "google", "entrar", "registro", "salir", "consumo",
 }
 
 
@@ -152,6 +152,16 @@ class BackendDeMentira:
                     {"codigo": "en", "nombre": "inglés", "endonimo": "English"},
                 ],
             }
+        if ruta == "/api/consumo":
+            periodo = {
+                "hasta": datetime.now(timezone.utc).isoformat(),
+                "clases_transcritas": 2,
+                "segundos_de_audio": 7200.0,
+                "peticiones_al_modelo": 3,
+                "caracteres_entrada": 90_000,
+                "caracteres_salida": 12_000,
+            }
+            return {"mes": periodo, "total": periodo}
         if ruta == "/api/auth/yo":
             return USUARIO
         if ruta == "/api/auth/google":

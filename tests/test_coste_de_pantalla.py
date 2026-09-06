@@ -57,6 +57,18 @@ def test_el_indice_no_pide_la_ficha_de_ninguna_clase(backend):
     assert backend.peticiones["/api/jobs"] == 1
 
 
+def test_el_consumo_se_pide_una_vez_por_pantalla(backend):
+    """Vive en la barra lateral, asi que sale en todas las pantallas.
+
+    Es una peticion diminuta —dos sumas sobre una tabla pequena— y por eso se
+    acepta que este siempre. Lo que no se acepta es que se vuelva una por
+    clase, que es como empezo el problema que este fichero vigila.
+    """
+    _abrir(backend)
+
+    assert backend.peticiones["/api/consumo"] == 1
+
+
 def test_abrir_una_clase_pide_una_sola_ficha(backend):
     _abrir(backend, clase_abierta="j3")
 

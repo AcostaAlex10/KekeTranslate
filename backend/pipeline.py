@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import logging
 
-from .annotator import AnnotationError, get_annotator
+from .annotator import AnnotationError, get_annotator, modelo_del_anotador
+from .annotator.base import BaseAnnotator
 from .biblioteca import Biblioteca
 from .config import Settings
+from .consumo import Consumo
 from .models import ContextoMateria, Job, JobStatus, TranscriptionResult
 from .store import JobStore
 from .transcription import TranscriptionError, get_provider
@@ -40,11 +42,35 @@ def contexto_del_job(job: Job, biblioteca: Biblioteca | None) -> ContextoMateria
     )
 
 
+def _apuntar_la_anotacion(
+    consumo: Consumo | None,
+    job: Job,
+    settings: Settings,
+    annotator: BaseAnnotator | None,
+) -> None:
+    """Anota en el libro de cuentas lo que costo redactar unos apuntes.
+
+    Se llama pasara lo que pasara, tambien cuando la anotacion revienta: en una
+    clase larga puede haberse gastado media docena de peticiones antes del
+    fallo, y el proveedor las cobra igual.
+    """
+    if consumo is None or annotator is None:
+        return
+    consumo.anotacion(
+        job.usuario_id,
+        job.id,
+        settings.annotator_provider,
+        modelo_del_anotador(settings),
+        annotator.gasto,
+    )
+
+
 async def run_job(
     job_id: str,
     settings: Settings,
     store: JobStore,
     biblioteca: Biblioteca | None = None,
+    consumo: Consumo | None = None,
 ) -> None:
     """Procesa un trabajo de principio a fin, registrando su avance.
 
@@ -57,6 +83,9 @@ async def run_job(
         return
 
     audio_path = settings.uploads_dir / f"{job_id}_{job.filename}"
+    # Fuera del `try` para poder preguntarle lo que gasto aunque la anotacion
+    # termine en excepcion.
+    annotator: BaseAnnotator | None = None
 
     try:
         # --- 1. Transcripcion -------------------------------------------
@@ -101,6 +130,16 @@ async def run_job(
             transcript_text=transcription.text,
             transcript_diarized=transcription.to_diarized_text(),
         )
+        if consumo is not None:
+            # Se apunta aqui, en cuanto la transcripcion esta hecha y guardada,
+            # y no al final: es la parte cara, y si la anotacion falla despues
+            # el minuto de audio ya esta pagado.
+            consumo.transcripcion(
+                job.usuario_id,
+                job_id,
+                provider.name,
+                transcription.audio_duration_seconds,
+            )
 
         # --- 2. Anotacion IA --------------------------------------------
         annotator = get_annotator(settings)
@@ -127,6 +166,8 @@ async def run_job(
         store.set_status(job_id, JobStatus.FAILED, error=f"Fallo inesperado: {exc}")
 
     finally:
+        _apuntar_la_anotacion(consumo, job, settings, annotator)
+
         # El audio original ya no hace falta una vez transcrito; se conserva
         # solo si el trabajo fallo, para poder reintentarlo.
         current = store.get(job_id)
@@ -139,6 +180,7 @@ async def reanotar_job(
     settings: Settings,
     store: JobStore,
     biblioteca: Biblioteca | None = None,
+    consumo: Consumo | None = None,
 ) -> None:
     """Vuelve a generar los apuntes de un trabajo ya transcrito.
 
@@ -163,6 +205,7 @@ async def reanotar_job(
         return
 
     store.update(job_id, status=JobStatus.ANNOTATING, error=None)
+    annotator: BaseAnnotator | None = None
 
     try:
         resultado = TranscriptionResult(
@@ -195,6 +238,12 @@ async def reanotar_job(
     except Exception as exc:  # noqa: BLE001 - nada debe dejar el job colgado
         logger.exception("[%s] Fallo inesperado al reanotar", job_id)
         store.set_status(job_id, JobStatus.FAILED, error=f"Fallo inesperado: {exc}")
+
+    finally:
+        # Rehacer los apuntes cuesta otra vez lo que cuesta el modelo. Lo que no
+        # se vuelve a apuntar es la transcripcion, que precisamente no se
+        # repite: es el motivo entero de que exista esta funcion.
+        _apuntar_la_anotacion(consumo, job, settings, annotator)
 
 
 def _persist_transcript(

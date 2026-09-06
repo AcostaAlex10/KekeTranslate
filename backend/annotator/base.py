@@ -15,7 +15,12 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 
 from ..config import Settings
-from ..models import IDIOMAS_POR_CODIGO, ContextoMateria, TranscriptionResult
+from ..models import (
+    IDIOMAS_POR_CODIGO,
+    ContextoMateria,
+    Gasto,
+    TranscriptionResult,
+)
 from ..pdf import recortar
 from . import prompts
 
@@ -33,10 +38,34 @@ class BaseAnnotator(ABC):
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
 
+        #: Lo que costo la ultima llamada a `annotate`. Lo lee el pipeline para
+        #: apuntarlo en el libro de cuentas, tambien cuando la anotacion falla:
+        #: las peticiones que llegaron a salir se pagaron igual.
+        self.gasto = Gasto()
+
     @abstractmethod
     async def _complete(self, system_prompt: str, user_prompt: str) -> str:
         """Envia una peticion al modelo y devuelve el texto de la respuesta."""
         raise NotImplementedError
+
+    async def _llamar(self, system_prompt: str, user_prompt: str) -> str:
+        """Pide al modelo, y apunta lo que costo pedirselo.
+
+        Todas las llamadas pasan por aqui —la de una pasada, la de cada
+        fragmento y la de la fusion—, de modo que un anotador nuevo queda
+        medido sin hacer nada: solo tiene que implementar `_complete`.
+
+        Lo enviado se cuenta antes de enviarlo. Asi una peticion que revienta
+        sigue apareciendo, que es la mitad que un contador ingenuo pierde. A
+        cambio puede contar de mas: un 503 no siempre se cobra. Se prefiere ese
+        error, que avisa de un gasto que quiza no hubo, al contrario. Un
+        reintento interno del proveedor cuenta como una sola peticion.
+        """
+        self.gasto.peticiones += 1
+        self.gasto.caracteres_entrada += len(system_prompt) + len(user_prompt)
+        respuesta = await self._complete(system_prompt, user_prompt)
+        self.gasto.caracteres_salida += len(respuesta)
+        return respuesta
 
     async def annotate(
         self,
@@ -55,6 +84,7 @@ class BaseAnnotator(ABC):
         —el caso normal— deja que salgan en el de la clase. Nunca afecta a la
         transcripcion, que se queda siempre como se dijo.
         """
+        self.gasto = Gasto()
         transcript = transcription.to_diarized_text()
         if not transcript.strip():
             raise AnnotationError(
@@ -118,7 +148,7 @@ class BaseAnnotator(ABC):
             transcript=transcript,
             **metadata,
         )
-        return await self._complete(prompts.SYSTEM_PROMPT, user_prompt)
+        return await self._llamar(prompts.SYSTEM_PROMPT, user_prompt)
 
     # -- Map-reduce ---------------------------------------------------------
 
@@ -168,7 +198,7 @@ class BaseAnnotator(ABC):
         # La fusion es una peticion mas, y llega pisandole los talones a la
         # ultima del reparto: tambien le toca esperar su turno.
         await self._respirar()
-        return await self._complete(prompts.SYSTEM_PROMPT, reduce_prompt)
+        return await self._llamar(prompts.SYSTEM_PROMPT, reduce_prompt)
 
     async def _con_ritmo(self, peticiones: list[tuple[str, str]]) -> list[str]:
         """Ejecuta las peticiones sin superar el ritmo que aguanta el proveedor.
@@ -188,7 +218,7 @@ class BaseAnnotator(ABC):
             async with semaforo:
                 if posicion:
                     await self._respirar()
-                return await self._complete(*prompts_de_la_peticion)
+                return await self._llamar(*prompts_de_la_peticion)
 
         return list(
             await asyncio.gather(

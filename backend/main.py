@@ -41,6 +41,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from .annotator import clave_del_anotador, modelo_del_anotador
 from .biblioteca import Biblioteca
 from .config import Settings, clave_completa, get_settings
+from .consumo import Consumo
 from .models import (
     IDIOMAS_DE_APUNTES,
     IDIOMAS_POR_CODIGO,
@@ -51,6 +52,7 @@ from .models import (
     Material,
     Nota,
     Permiso,
+    ResumenDeConsumo,
     Tema,
     TipoMaterial,
     Usuario,
@@ -81,12 +83,13 @@ UPLOAD_CHUNK_BYTES = 4 * 1024 * 1024
 _store: JobStore | None = None
 _biblioteca: Biblioteca | None = None
 _usuarios: Usuarios | None = None
+_consumo: Consumo | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Inicializa el almacen de trabajos al arrancar el servidor."""
-    global _store, _biblioteca, _usuarios
+    global _store, _biblioteca, _usuarios, _consumo
     # Antes de nada: sin esto, un antivirus que inspeccione el HTTPS hace
     # fallar todas las llamadas a las APIs con CERTIFICATE_VERIFY_FAILED.
     usar_certificados_del_sistema()
@@ -95,6 +98,7 @@ async def lifespan(app: FastAPI):
     _store = JobStore(settings.db_path)
     _biblioteca = Biblioteca(settings.db_path)
     _usuarios = Usuarios(settings.db_path)
+    _consumo = Consumo(settings.db_path)
     logger.info(
         "KekeTranslate listo | transcripcion=%s | anotador=%s (%s)",
         settings.transcription_provider,
@@ -134,6 +138,13 @@ def get_usuarios() -> Usuarios:
     if _usuarios is None:  # pragma: no cover - solo fuera del lifespan
         raise RuntimeError("Las cuentas no estan inicializadas")
     return _usuarios
+
+
+def get_consumo() -> Consumo:
+    """Dependencia que expone el libro de cuentas."""
+    if _consumo is None:  # pragma: no cover - solo fuera del lifespan
+        raise RuntimeError("El libro de cuentas no esta inicializado")
+    return _consumo
 
 
 # Lo unico que se puede pedir sin haber entrado. Todo lo demas bajo /api queda
@@ -496,6 +507,7 @@ async def create_job(
     settings: Settings = Depends(get_settings),
     store: JobStore = Depends(get_store),
     biblioteca: Biblioteca = Depends(get_biblioteca),
+    consumo: Consumo = Depends(get_consumo),
     usuario: Usuario = Depends(usuario_actual),
 ) -> Job:
     """Sube una grabacion y encola su transcripcion y anotacion.
@@ -544,7 +556,7 @@ async def create_job(
 
     # El procesado ocurre fuera del ciclo peticion/respuesta: la transcripcion
     # de una clase larga tarda mucho mas de lo que aguanta una conexion HTTP.
-    background_tasks.add_task(run_job, job_id, settings, store, biblioteca)
+    background_tasks.add_task(run_job, job_id, settings, store, biblioteca, consumo)
     logger.info("Trabajo %s encolado (%s, %.1f MB)", job_id, filename, size / 1e6)
     return job
 
@@ -557,6 +569,7 @@ async def reanotar(
     settings: Settings = Depends(get_settings),
     store: JobStore = Depends(get_store),
     biblioteca: Biblioteca = Depends(get_biblioteca),
+    consumo: Consumo = Depends(get_consumo),
     usuario: Usuario = Depends(usuario_actual),
 ) -> Job:
     """Reintenta solo la generacion de apuntes, reutilizando la transcripcion.
@@ -598,9 +611,25 @@ async def reanotar(
     # que lee el pipeline, asi que si se escribiera despues la tarea podria
     # arrancar con el idioma viejo.
     trabajo = store.update(job_id, **cambios)
-    background_tasks.add_task(reanotar_job, job_id, settings, store, biblioteca)
+    background_tasks.add_task(
+        reanotar_job, job_id, settings, store, biblioteca, consumo
+    )
     logger.info("Trabajo %s reencolado para reanotar", job_id)
     return trabajo
+
+
+@app.get("/api/consumo", response_model=ResumenDeConsumo)
+async def consumo_propio(
+    consumo: Consumo = Depends(get_consumo),
+    usuario: Usuario = Depends(usuario_actual),
+) -> ResumenDeConsumo:
+    """Lo que ha consumido esta cuenta: este mes y desde siempre.
+
+    Cada cual ve lo suyo y nada mas. No hay parametro para pedir el de otra
+    persona: el dia que haga falta una vista de administracion sera un endpoint
+    aparte, con su propia comprobacion, y no un parametro que se pueda olvidar.
+    """
+    return consumo.resumen(usuario.id)
 
 
 @app.get("/api/jobs", response_model=list[JobSummary])

@@ -8,6 +8,38 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 
+class Gasto(BaseModel):
+    """Lo que costo una operacion, en unidades comparables entre proveedores.
+
+    Se miden caracteres y no tokens porque cada proveedor cuenta los suyos a su
+    manera y no todos los devuelven. Para hacerse una idea, un token ronda los
+    cuatro caracteres.
+    """
+
+    peticiones: int = 0
+    caracteres_entrada: int = 0
+    caracteres_salida: int = 0
+
+
+class PeriodoDeConsumo(BaseModel):
+    """Lo consumido por una cuenta entre dos fechas."""
+
+    desde: datetime | None = None
+    hasta: datetime
+    clases_transcritas: int = 0
+    segundos_de_audio: float = 0.0
+    peticiones_al_modelo: int = 0
+    caracteres_entrada: int = 0
+    caracteres_salida: int = 0
+
+
+class ResumenDeConsumo(BaseModel):
+    """Lo gastado este mes y desde siempre."""
+
+    mes: PeriodoDeConsumo
+    total: PeriodoDeConsumo
+
+
 class Idioma(BaseModel):
     """Un idioma en el que se pueden pedir los apuntes."""
 
