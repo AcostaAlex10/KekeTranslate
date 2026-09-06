@@ -428,6 +428,7 @@ def upload_file(
     nombre: str | None = None,
     grupo_id: str | None = None,
     tema_id: str | None = None,
+    idioma: str | None = None,
 ) -> dict | None:
     """Sube la grabacion y devuelve el trabajo creado.
 
@@ -441,7 +442,13 @@ def upload_file(
     nombre = nombre or getattr(uploaded, "name", None) or "grabacion.wav"
     tipo = getattr(uploaded, "type", None) or "application/octet-stream"
     files = {"file": (nombre, uploaded, tipo)}
-    params = {k: v for k, v in {"grupo_id": grupo_id, "tema_id": tema_id}.items() if v}
+    params = {
+        k: v
+        for k, v in {
+            "grupo_id": grupo_id, "tema_id": tema_id, "idioma": idioma
+        }.items()
+        if v
+    }
     try:
         response = httpx.post(
             f"{BACKEND_URL}/api/jobs",
@@ -1204,6 +1211,61 @@ def elegir_destino(clave: str) -> tuple[str | None, str | None]:
     return grupo_id, tema_id
 
 
+def idiomas_disponibles() -> list[dict]:
+    """Los idiomas en los que este servidor sabe redactar los apuntes.
+
+    La lista la publica el backend en `/api/health` y no se duplica aqui: una
+    copia propia se separaria de la que valida el servidor, y el usuario veria
+    ofrecido un idioma que despues se rechaza.
+    """
+    return (salud or {}).get("idiomas_de_apuntes") or []
+
+
+def nombre_de_idioma(codigo: str | None) -> str:
+    """Como se llama en pantalla el idioma de unos apuntes."""
+    for idioma in idiomas_disponibles():
+        if idioma["codigo"] == codigo:
+            return idioma["nombre"]
+    return "el de la clase"
+
+
+def elegir_idioma(
+    clave: str, actual: str | None = None, *, contenedor=None
+) -> str | None:
+    """Selector del idioma de los apuntes. `None` es el idioma de la clase.
+
+    Las opciones son los codigos y no las etiquetas, con `format_func` poniendo
+    el texto: asi cambiar una palabra visible no invalida lo que quedo guardado
+    en la sesion.
+
+    Con `contenedor` se dibuja donde le digan. Sin el se queda a media anchura,
+    que es lo que pide un selector de una linea en una pantalla centrada.
+    """
+    idiomas = idiomas_disponibles()
+    if not idiomas:
+        return actual
+
+    opciones = [None] + [i["codigo"] for i in idiomas]
+    if contenedor is None:
+        contenedor, _ = st.columns(2)
+    # Se dibuja por atributo y no con `with`: `contenedor` puede ser el propio
+    # `st`, que no es un gestor de contexto.
+    return contenedor.selectbox(
+        "Idioma de los apuntes",
+        opciones,
+        index=opciones.index(actual) if actual in opciones else 0,
+        format_func=lambda c: (
+            "El de la clase" if c is None else nombre_de_idioma(c).capitalize()
+        ),
+        key=f"idioma_{clave}",
+        help=(
+            "La transcripción se queda siempre en el idioma en que se dio "
+            "la clase: es el registro de lo que se dijo. Esto solo cambia "
+            "el idioma en el que se escriben los apuntes."
+        ),
+    )
+
+
 def mostrar_ubicacion(detalle: dict) -> None:
     """Muestra donde esta archivada la clase y permite cambiarla de sitio."""
     grupos = {g["id"]: g for g in cargar_grupos()}
@@ -1254,7 +1316,18 @@ def mostrar_apuntes(detalle: dict, filename: str) -> None:
     apuntes = editados if editados is not None else generados
 
     if editados is not None:
-        st.info("Estás viendo tu versión corregida, no la que escribió la IA.")
+        aviso = "Estás viendo tu versión corregida, no la que escribió la IA."
+        # Sin esta segunda mitad, cambiar el idioma de una clase con apuntes
+        # corregidos a mano no parecia hacer nada: la traduccion se generaba,
+        # pero en pantalla seguia la version propia, en el idioma de antes.
+        if detalle.get("idioma_apuntes"):
+            nombre = nombre_de_idioma(detalle["idioma_apuntes"])
+            aviso += (
+                f" Los apuntes de la IA están en {nombre}; los tuyos, en el "
+                "idioma en que los escribiste. Para leer la traducción, abre "
+                "**Editar los apuntes** y pulsa **Volver al original**."
+            )
+        st.info(aviso)
 
     editando = st.toggle("Editar los apuntes", key=f"editar_{job_id}")
 
@@ -1300,14 +1373,32 @@ def mostrar_apuntes(detalle: dict, filename: str) -> None:
     # los borrados. Y termina en `st.rerun()`: sin el, la fila seguia mostrando
     # la clase como terminada mientras el modelo ya estaba reescribiendola.
     with columna_rehacer:
-        if confirmar_borrado(
-            f"rehacer_{job_id}",
-            "Rehacer con la IA",
-            "Se van a descartar los apuntes actuales y la IA los escribirá otra "
-            "vez. La transcripción no se toca. Tus correcciones a mano tampoco: "
-            "se guardan aparte.",
-        ):
-            if api_llamar("POST", f"/api/jobs/{job_id}/reanotar") is not None:
+        # El selector va aqui y no en un sitio propio porque cambiar el idioma
+        # de unos apuntes ya escritos **es** rehacerlos: no hay forma de
+        # traducirlos sin volver a pasar por el modelo. Y de paso deja a la
+        # vista en que idioma estan los de esta clase.
+        actual = detalle.get("idioma_apuntes")
+        idioma = elegir_idioma(f"rehacer_{job_id}", actual=actual, contenedor=st)
+
+        advertencia = (
+            "Se van a descartar los apuntes actuales y la IA los escribirá "
+            "otra vez. La transcripción no se toca. Tus correcciones a mano "
+            "tampoco: se guardan aparte."
+        )
+        if idioma != actual:
+            advertencia += (
+                f" Los nuevos saldrán en {nombre_de_idioma(idioma)}."
+            )
+
+        if confirmar_borrado(f"rehacer_{job_id}", "Rehacer con la IA", advertencia):
+            # Se manda siempre, incluso vacio: vacio es lo que pide volver al
+            # idioma de la clase, y no mandarlo significaria dejarlo como esta.
+            respuesta = api_llamar(
+                "POST",
+                f"/api/jobs/{job_id}/reanotar",
+                params={"idioma": idioma or ""},
+            )
+            if respuesta is not None:
                 st.rerun()
 
 
@@ -1316,10 +1407,17 @@ def encolar(
     nombre: str | None = None,
     grupo_id: str | None = None,
     tema_id: str | None = None,
+    idioma: str | None = None,
 ) -> None:
     """Sube una grabacion y deja el trabajo como activo."""
     with st.spinner("Subiendo la grabación…"):
-        trabajo = upload_file(fuente, nombre=nombre, grupo_id=grupo_id, tema_id=tema_id)
+        trabajo = upload_file(
+            fuente,
+            nombre=nombre,
+            grupo_id=grupo_id,
+            tema_id=tema_id,
+            idioma=idioma,
+        )
     if trabajo:
         st.session_state["trabajo_activo"] = trabajo["id"]
         st.success(
@@ -1358,9 +1456,16 @@ if seccion == SECCIONES[0]:
             st.info(f"**{nombre}** — {tamano_mb:.1f} MB")
 
             destino = elegir_destino("grabacion")
+            idioma = elegir_idioma("grabacion")
 
             if st.button("Transcribir y generar apuntes", type="primary"):
-                encolar(grabacion, nombre=nombre, grupo_id=destino[0], tema_id=destino[1])
+                encolar(
+                    grabacion,
+                    nombre=nombre,
+                    grupo_id=destino[0],
+                    tema_id=destino[1],
+                    idioma=idioma,
+                )
 
         st.warning(
             "Esta grabadora es provisional: guarda el audio sin comprimir y no "
@@ -1387,9 +1492,15 @@ if seccion == SECCIONES[0]:
             st.info(f"**{archivo.name}** — {archivo.size / 1e6:.1f} MB")
 
             destino = elegir_destino("fichero")
+            idioma = elegir_idioma("fichero")
 
             if st.button("Transcribir y generar apuntes", type="primary"):
-                encolar(archivo, grupo_id=destino[0], tema_id=destino[1])
+                encolar(
+                    archivo,
+                    grupo_id=destino[0],
+                    tema_id=destino[1],
+                    idioma=idioma,
+                )
 
     st.divider()
     st.caption(
@@ -1421,10 +1532,19 @@ def dato_util_de(clase: dict) -> str:
     Si esta lista, cuanto dura, que es lo que ayuda a elegir. Si no, en que
     estado va, **con palabras**: el icono solo obliga a recordar que significa
     cada dibujo, y en voz alta no dice nada util.
+
+    Y el idioma, cuando los apuntes no salen en el de la clase. Es lo unico que
+    distingue en la lista unos apuntes traducidos de los normales; sin esto
+    habria que abrir las clases una por una para saber cual es cual.
     """
     if clase["status"] == "completed":
-        return formatear_duracion(clase.get("audio_duration_seconds"))
-    return PALABRA_DE_ESTADO.get(clase["status"], "En proceso")
+        dato = formatear_duracion(clase.get("audio_duration_seconds"))
+    else:
+        dato = PALABRA_DE_ESTADO.get(clase["status"], "En proceso")
+
+    if clase.get("idioma_apuntes"):
+        dato += f" · {nombre_de_idioma(clase['idioma_apuntes'])}"
+    return dato
 
 
 def abrir_clase(job_id: str) -> None:
