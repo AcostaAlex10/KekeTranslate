@@ -214,6 +214,49 @@ El modelo no pudo sacarla de otro sitio. Además el título de los apuntes pasó
 o sea que la clase queda situada dentro de la planificación de la cátedra, que
 es exactamente lo que el producto promete.
 
+### La sesión ya sobrevive a recargar la página (06/09/2026)
+
+El testigo se guarda ahora en una cookie del navegador. Streamlit lo pone
+difícil de dos maneras, y las dos hay que tenerlas presentes si alguien vuelve
+a tocar esto:
+
+1. **`st.context.cookies` solo lee.** No hay contraparte para escribir, así que
+   la cookie se pone desde el navegador, con un componente de altura cero que
+   toca `document.cookie` del documento padre —el mismo truco que ya usaba
+   `declarar_idioma`—. Funciona porque el iframe de los componentes lleva
+   `allow-same-origin` en su `sandbox`; está comprobado leyendo el atributo en
+   la página real, no supuesto.
+2. **Lee las cookies de la petición inicial, no las de ahora.** Durante toda la
+   sesión devuelve siempre lo mismo, aunque el navegador ya las haya cambiado.
+   Por eso la cookie se mira **una sola vez**: releyéndola en cada pasada,
+   *Salir* dejaba de funcionar, porque la cookie recién borrada seguía
+   apareciendo ahí y volvía a meter a la persona en su cuenta.
+
+**Cuánto dura.** La cookie caduca cuando caduca la sesión en el servidor: 30
+días sin usarse. El backend lo publica en `/api/health` (`dias_de_sesion`) para
+que no haya dos números que se puedan separar, y la cookie se renueva en cada
+pasada igual que el servidor renueva `ultimo_uso`. Si el backend no lo dijera,
+la interfaz se queda en un día: la regla es igual o antes, nunca después.
+
+**Lo que no es.** No es una cookie `HttpOnly`. Solo puede ponerlas el servidor
+que sirve la página, y el backend vive en otro puerto, así que una cookie suya
+no llegaría nunca al servidor de Streamlit. El testigo queda legible por el
+JavaScript de la página; se acota con `SameSite=Lax`, con `Secure` cuando la
+página va por https —lo decide el navegador, porque puesto siempre la cookie se
+perdería en `http://localhost`— y con que el testigo se puede revocar.
+
+**Un fallo que apareció por el camino.** *Salir* cerraba la sesión pero la
+pasada que atendía el clic seguía dibujando la app entera: las listas salían
+vacías, los apuntes desaparecían y el botón de salir seguía ahí, como si el clic
+no hubiera hecho nada. Faltaba un `st.rerun()` al final de `cerrar_sesion()`.
+No tenía que ver con las cookies; se vio al escribir su test.
+
+**Probado en un navegador de verdad**, no solo con `AppTest`: entrar y ver la
+cookie puesta; recargar y seguir dentro; *Salir* y volver a la pantalla de
+entrar con la cookie ya borrada; y una cookie con un testigo que el servidor no
+reconoce, que muestra «Tu sesión ha caducado» y la borra. Sin errores en la
+consola.
+
 ### Lo que NO está probado
 
 - El anotador de **Claude** con llamadas reales (sí el de Gemini).

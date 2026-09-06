@@ -89,9 +89,10 @@ Tres cosas que un transcriptor genérico no hace:
 - **Hay cuentas y la API está cerrada.** Se entra con correo y contraseña o
   con Google, y cada persona solo ve lo suyo: pedir la clase de otro devuelve
   404, no 403. Lo único accesible sin cuenta es un enlace compartido, y solo
-  abre el grupo al que apunta. La sesión, en cambio, **vive mientras la pestaña
-  siga abierta**: al recargar hay que volver a entrar, porque Streamlit no
-  ofrece cookies y no se quiso meter el testigo en la URL.
+  abre el grupo al que apunta. La sesión **sobrevive a recargar la página**: el
+  testigo se guarda en una cookie de ese navegador, que caduca a la vez que la
+  sesión en el servidor y desaparece al pulsar *Salir*. Nunca viaja en la URL,
+  que se copia y se comparte sin querer.
 - **El audio se borra en cuanto la clase se transcribe bien**, y no hay
   reproductor. Es una decisión tomada, no una carencia: guardar el audio de una
   cursada entera cuesta disco de verdad —una clase de 4 h son 2,5 GB sin

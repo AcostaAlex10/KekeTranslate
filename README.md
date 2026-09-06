@@ -231,8 +231,9 @@ mover después desde *Mis clases*.
 > Lo único accesible sin cuenta es un enlace compartido, y solo abre el grupo al
 > que apunta.
 >
-> Lo que sí sigue pendiente: la sesión vive mientras la pestaña siga abierta, así
-> que al recargar hay que volver a entrar. Ver
+> La sesión sobrevive a recargar la página: el testigo queda en una cookie de
+> este navegador que caduca a la vez que la sesión en el servidor, y *Salir* la
+> borra. Lo que queda por hacer está en
 > [docs/PENDIENTE.md](docs/PENDIENTE.md).
 
 ### Desde la línea de comandos

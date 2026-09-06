@@ -120,6 +120,15 @@ más cuestan de redescubrir:
 - **`st.cache_data` y `st.cache_resource` son globales del servidor**, no por
   usuario. El testigo de sesión entra en la clave de caché de `_leer()`: sin eso,
   la segunda persona en pedir `/api/jobs` recibiría la lista de la primera.
+- **`st.context.cookies` solo lee, y lee la petición inicial.** No hay forma de
+  escribir cookies desde Python: se ponen con un componente de altura cero que
+  toca `document.cookie` del documento padre. Y lo que devuelve no cambia en
+  toda la sesión aunque el navegador sí haya cambiado, así que la cookie de
+  sesión se mira **una sola vez** (`cookie_ya_mirada`); releyéndola en cada
+  pasada, *Salir* no funciona. `tests/test_cookie_de_sesion.py` lo fija.
+- **Tras un `st.rerun()`, `AppTest` conserva los elementos de la pasada
+  abandonada.** Un test que compruebe «ya no está el botón X» pasará a verde
+  por error. Comprueba la presencia de algo de la pantalla nueva.
 
 ### Iconos y CSS
 
