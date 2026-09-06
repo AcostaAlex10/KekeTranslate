@@ -1,4 +1,4 @@
-# 🎓 KekeTranslate
+# KekeTranslate
 
 Transcripción y **anotación inteligente de clases largas** (2–4 horas). Sube la
 grabación de una clase y recupera dos cosas: la transcripción completa con
@@ -17,9 +17,9 @@ proveedor:
 
 | Proveedor | Tamaño máximo | Duración máxima | Diarización | ¿Hace falta segmentar? |
 |---|---|---|---|---|
-| **AssemblyAI** *(por defecto)* | 5 GB (2,2 GB vía `/v2/upload`) | **10 h** | ✅ nativa | ❌ **No** |
-| Deepgram `nova-3` | ~2 GB | larga | ✅ nativa | ❌ No |
-| OpenAI Whisper / `gpt-4o-transcribe` | **25 MB** | — | ❌ No | ✅ Sí, obligatorio |
+| **AssemblyAI** *(por defecto)* | 5 GB (2,2 GB vía `/v2/upload`) | **10 h** | Sí, nativa | **No** |
+| Deepgram `nova-3` | ~2 GB | larga | Sí, nativa | No |
+| OpenAI Whisper / `gpt-4o-transcribe` | **25 MB** | — | No | **Sí, obligatorio** |
 
 **AssemblyAI es el proveedor por defecto** porque una clase de 4 h entra completa
 en una sola petición: nada de cortar el audio, nada de pegar transcripciones con
@@ -85,7 +85,10 @@ KekeTranslate/
 │   ├── main.py                    # API HTTP (FastAPI)
 │   ├── config.py                  # Ajustes desde el entorno
 │   ├── models.py                  # Esquemas: Job, Utterance, TranscriptionResult
-│   ├── store.py                   # Persistencia en SQLite
+│   ├── store.py                   # Persistencia de las clases en SQLite
+│   ├── biblioteca.py              # Grupos, temas, material y notas
+│   ├── usuarios.py                # Cuentas, contrasenas y sesiones
+│   ├── pdf.py                     # Extraer el texto de los PDF adjuntos
 │   ├── pipeline.py                # Orquestación audio → transcripción → apuntes
 │   ├── media.py                   # ffmpeg: duración y segmentación
 │   ├── transcription/
@@ -104,7 +107,7 @@ KekeTranslate/
 ├── frontend/app.py                # Interfaz Streamlit
 ├── run.py                         # Arranca backend + frontend con un comando
 ├── iniciar.bat                    # Lo mismo, con doble clic en Windows
-└── tests/                         # 71 tests, sin llamadas a APIs externas
+└── tests/                         # 192 tests, sin llamadas a APIs externas
 ```
 
 ---
@@ -139,12 +142,12 @@ proveedor de transcripción y la del anotador:
 | Variable | Obligatoria | Por defecto | Descripción |
 |---|:---:|---|---|
 | `TRANSCRIPTION_PROVIDER` | — | `assemblyai` | `assemblyai`, `deepgram` u `openai` |
-| `ASSEMBLYAI_API_KEY` | ✅ *(si usas AssemblyAI)* | — | [assemblyai.com](https://www.assemblyai.com/) |
-| `DEEPGRAM_API_KEY` | ✅ *(si usas Deepgram)* | — | [deepgram.com](https://deepgram.com/) |
-| `OPENAI_API_KEY` | ✅ *(si usas OpenAI)* | — | [platform.openai.com](https://platform.openai.com/) |
+| `ASSEMBLYAI_API_KEY` | Sí *(si usas AssemblyAI)* | — | [assemblyai.com](https://www.assemblyai.com/) |
+| `DEEPGRAM_API_KEY` | Sí *(si usas Deepgram)* | — | [deepgram.com](https://deepgram.com/) |
+| `OPENAI_API_KEY` | Sí *(si usas OpenAI)* | — | [platform.openai.com](https://platform.openai.com/) |
 | `ANNOTATOR_PROVIDER` | — | `gemini` | `gemini` (nivel gratuito, por defecto) o `anthropic` (de pago) |
-| `ANTHROPIC_API_KEY` | ✅ *(si usas Anthropic)* | — | [console.anthropic.com](https://console.anthropic.com/) |
-| `GEMINI_API_KEY` | ✅ *(si usas Gemini)* | — | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — gratis |
+| `ANTHROPIC_API_KEY` | Sí *(si usas Anthropic)* | — | [console.anthropic.com](https://console.anthropic.com/) |
+| `GEMINI_API_KEY` | Sí *(si usas Gemini)* | — | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — gratis |
 | `GEMINI_MODEL` | — | `gemini-3.7-flash` | Modelo de Gemini. Versión fija a propósito: el alias `-latest` apunta al modelo más nuevo, y esos traen un nivel gratuito de 20 peticiones al día |
 | `GEMINI_MAX_TOKENS` | — | `32000` | Longitud máxima de los apuntes |
 | `ANTHROPIC_MODEL` | — | `claude-opus-5` | Modelo del anotador |
@@ -157,7 +160,7 @@ proveedor de transcripción y la del anotador:
 | `MAX_UPLOAD_MB` | — | `5120` | Tope del backend (5 GB, el de AssemblyAI). Streamlit corta antes, en 1 GB: ver `.streamlit/config.toml` |
 | `BACKEND_URL` | — | `http://localhost:8000` | URL que consume el frontend |
 
-> ⚠️ El fichero `.env` está en `.gitignore`. **Nunca subas tus claves al repositorio.**
+> **Cuidado:** el fichero `.env` está en `.gitignore`. **Nunca subas tus claves al repositorio.**
 
 ---
 
@@ -222,30 +225,50 @@ nombre y una materia, se divide en **temas** (`Unidad 3: Integrales`) y admite:
 Al subir una clase se elige en qué grupo y tema archivarla; también se puede
 mover después desde *Mis clases*.
 
-> **Sobre la privacidad, mientras no haya usuarios:** el token protege el
-> *enlace*, no la API. Quien pueda llegar al backend por su cuenta puede
-> consultar cualquier grupo, porque todavía no hay nada que autentique las
-> peticiones. Por eso la app se sirve solo en la red local. El login, que es lo
-> que cierra este hueco, está en el plan.
+> **Sobre la privacidad:** hay cuentas y la API está cerrada. Se entra con
+> correo y contraseña, y cada persona solo ve lo suyo: pedir la clase de otro
+> devuelve 404, no 403, para no confirmar siquiera que ese identificador exista.
+> Lo único accesible sin cuenta es un enlace compartido, y solo abre el grupo al
+> que apunta.
+>
+> Lo que sí sigue pendiente: la sesión vive mientras la pestaña siga abierta, así
+> que al recargar hay que volver a entrar. Ver
+> [docs/PENDIENTE.md](docs/PENDIENTE.md).
 
 ### Desde la línea de comandos
 
+Todo lo que no sea `/api/health`, `/api/auth/...` o `/api/compartido/...` exige
+sesión, así que lo primero es conseguir un testigo:
+
 ```bash
+# Entrar y quedarse con el testigo
+TESTIGO=$(curl -s -X POST http://localhost:8000/api/auth/entrar \
+  -H "Content-Type: application/json" \
+  -d '{"email":"tu@correo","password":"tu contraseña"}' | jq -r .token)
+
 # Encolar una clase
-curl -F "file=@clase_calculo.mp3" http://localhost:8000/api/jobs
+curl -H "Authorization: Bearer $TESTIGO" \
+  -F "file=@clase_calculo.mp3" http://localhost:8000/api/jobs
 
 # Consultar el estado
-curl http://localhost:8000/api/jobs/{job_id}
+curl -H "Authorization: Bearer $TESTIGO" http://localhost:8000/api/jobs/{job_id}
 
 # Descargar los apuntes cuando el estado sea "completed"
-curl http://localhost:8000/api/jobs/{job_id}/notes -o apuntes.md
+curl -H "Authorization: Bearer $TESTIGO" \
+  http://localhost:8000/api/jobs/{job_id}/notes -o apuntes.md
 ```
 
 ### Endpoints
 
 | Método | Ruta | Descripción |
 |---|---|---|
-| `GET` | `/api/health` | Estado del servicio y configuración activa |
+| `GET` | `/api/health` | Estado del servicio y configuración activa · **sin sesión** |
+| `POST` | `/api/auth/registro` | Crea una cuenta y abre sesión · **sin sesión** |
+| `POST` | `/api/auth/entrar` | Abre sesión con correo y contraseña · **sin sesión** |
+| `POST` | `/api/auth/salir` | Cierra esta sesión; el testigo deja de valer |
+| `GET` | `/api/auth/yo` | Quién es el dueño del testigo |
+| `POST` | `/api/auth/contrasena` | Pone o cambia la contraseña; cierra el resto de sesiones |
+| `GET` \| `POST` | `/api/auth/google` | Entrar con Google, si el servidor lo tiene configurado |
 | `POST` | `/api/jobs` | Sube una grabación y encola el trabajo |
 | `GET` | `/api/jobs` | Lista los trabajos recientes |
 | `GET` | `/api/jobs/{id}` | Estado completo, transcripción y apuntes |
@@ -254,11 +277,15 @@ curl http://localhost:8000/api/jobs/{job_id}/notes -o apuntes.md
 | `POST` | `/api/jobs/{id}/reanotar` | Rehace solo los apuntes, sin volver a transcribir |
 | `PUT` | `/api/jobs/{id}/notes` | Guarda la versión corregida a mano |
 | `PATCH` | `/api/jobs/{id}/ubicacion` | Archiva la clase en un grupo y tema |
+| `PATCH` | `/api/jobs/{id}/titulo` | Le pone nombre a la clase |
 | `DELETE` | `/api/jobs/{id}` | Borra el trabajo y sus ficheros |
 | `POST` | `/api/grupos` | Crea un grupo de una materia |
 | `GET` | `/api/grupos` | Lista los grupos |
 | `POST` | `/api/grupos/{id}/compartir` | Genera el enlace (`?permiso=lectura\|escritura`) |
-| `GET` | `/api/compartido/{token}` | Resuelve un enlace compartido |
+| `GET` | `/api/compartido/{token}` | Resuelve un enlace compartido · **sin sesión** |
+| `GET` | `/api/compartido/{token}/clases` | Las clases de ese grupo, y solo de ese · **sin sesión** |
+| `GET` | `/api/compartido/{token}/temas` · `/materiales` · `/notas` | Lo demás del grupo · **sin sesión** |
+| `POST` \| `PUT` | `/api/compartido/{token}/notas` | Escribir, si el enlace es de escritura · **sin sesión** |
 | `POST` | `/api/grupos/{id}/temas` | Crea un tema dentro del grupo |
 | `POST` | `/api/grupos/{id}/materiales` | Adjunta un PDF y extrae su texto |
 | `POST` | `/api/grupos/{id}/notas` | Crea una nota propia |
@@ -342,11 +369,21 @@ el caso de uso normal esta ruta no se activa nunca.
 pytest
 ```
 
-Los 71 tests cubren el formateo de la transcripción, la normalización de las
+Los 192 tests cubren el formateo de la transcripción, la normalización de las
 respuestas de AssemblyAI y Deepgram, la persistencia, el flujo completo de la
 API, los caminos de fallo del pipeline, la carga de la configuración y la de la
-interfaz. Usan
-proveedores simulados: **no gastan ni una llamada a las APIs de pago**.
+interfaz. Usan proveedores simulados: **no gastan ni una llamada a las APIs de
+pago**.
+
+Cuatro merecen mención aparte porque no comprueban que algo funcione, sino que
+no vuelva a romperse de una forma concreta que ya ocurrió:
+
+| Fichero | Qué impide |
+|---|---|
+| `test_auth.py` | Que una persona llegue a los apuntes de otra, por cualquiera de las tres vías |
+| `test_coste_de_pantalla.py` | Que dibujar una pantalla vuelva a costar una petición por clase |
+| `test_composicion.py` | Que se anide un `expander` dentro de otro, que Streamlit no admite |
+| `test_textos.py` | Que un texto que ve el usuario se escriba sin tildes |
 
 ---
 
