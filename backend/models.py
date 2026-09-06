@@ -8,6 +8,33 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 
+class Idioma(BaseModel):
+    """Un idioma en el que se pueden pedir los apuntes."""
+
+    codigo: str
+    nombre: str = Field(description="Como se llama en la interfaz, en espanol.")
+    endonimo: str = Field(description="Como se llama a si mismo, para el prompt.")
+
+
+# Los idiomas en los que se pueden pedir los apuntes. La lista vive aqui y la
+# publica `/api/health`, de modo que la interfaz no tenga su propia copia que
+# se pueda separar de la que valida el backend.
+#
+# El endonimo no es adorno: el prompt esta escrito en espanol, y pedir "redacta
+# en aleman" a secas deja margen a que el modelo conteste sobre el aleman en
+# vez de en aleman. Diciendo "en aleman (Deutsch)" no hay ambiguedad posible.
+IDIOMAS_DE_APUNTES: list[Idioma] = [
+    Idioma(codigo="es", nombre="español", endonimo="español"),
+    Idioma(codigo="en", nombre="inglés", endonimo="English"),
+    Idioma(codigo="pt", nombre="portugués", endonimo="português"),
+    Idioma(codigo="fr", nombre="francés", endonimo="français"),
+    Idioma(codigo="de", nombre="alemán", endonimo="Deutsch"),
+    Idioma(codigo="it", nombre="italiano", endonimo="italiano"),
+]
+
+IDIOMAS_POR_CODIGO: dict[str, Idioma] = {i.codigo: i for i in IDIOMAS_DE_APUNTES}
+
+
 class JobStatus(str, Enum):
     """Estados por los que pasa un trabajo de principio a fin."""
 
@@ -102,6 +129,15 @@ class Job(BaseModel):
     transcript_diarized: str | None = None
     notes_markdown: str | None = None
 
+    # Idioma en el que se piden los apuntes. Nulo —y es el caso normal— quiere
+    # decir el de la clase, que es como se comporto siempre.
+    #
+    # Solo afecta a los apuntes. La transcripcion se queda SIEMPRE en el idioma
+    # en que se dio la clase: es el registro fiel de lo que se dijo, es a donde
+    # se vuelve cuando un apunte no se entiende, y traducirla costaria otra
+    # pasada entera del modelo sobre 50-70k tokens.
+    idioma_apuntes: str | None = None
+
     # Version retocada a mano de los apuntes. Se guarda aparte para no pisar lo
     # que genero la IA: si mas adelante se rehacen los apuntes, las
     # correcciones propias no desaparecen sin avisar.
@@ -153,6 +189,10 @@ class JobSummary(BaseModel):
     error: str | None = None
     grupo_id: str | None = None
     tema_id: str | None = None
+
+    # Va en el listado, y no solo en la ficha, para que se vea de un vistazo
+    # cual de las clases tiene los apuntes traducidos sin tener que abrirlas.
+    idioma_apuntes: str | None = None
 
     @property
     def nombre_visible(self) -> str:

@@ -47,7 +47,7 @@ class _FakeAnnotator:
     def __init__(self, settings):
         pass
 
-    async def annotate(self, transcription, *, filename, contexto=None):
+    async def annotate(self, transcription, *, filename, contexto=None, idioma=None):
         # El anotador debe recibir el texto con orador y marca de tiempo.
         assert "[00:00:00] Orador A: Hola clase." in transcription.to_diarized_text()
         return "# Clase de calculo\n\n## Resumen ejecutivo\n\nDerivadas."
@@ -267,7 +267,7 @@ class _AnotadorQueFalla:
     def __init__(self, settings):
         pass
 
-    async def annotate(self, transcription, *, filename, contexto=None):
+    async def annotate(self, transcription, *, filename, contexto=None, idioma=None):
         from backend.annotator import AnnotationError
 
         raise AnnotationError("Gemini no genero los apuntes tras varios reintentos.")

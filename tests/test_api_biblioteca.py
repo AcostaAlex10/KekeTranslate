@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import backend.pipeline as pipeline
+from backend.annotator.base import BaseAnnotator
 from backend.models import JobStatus, TranscriptionResult, Utterance
 
 from .pdf_de_prueba import pdf_con_texto, pdf_escaneado
@@ -44,34 +45,26 @@ class _Proveedor:
         )
 
 
-class _AnotadorEspia:
-    """Guarda el contexto que recibe, para poder mirarlo en el test."""
+class _AnotadorEspia(BaseAnnotator):
+    """Un anotador de verdad cuyo `_complete` guarda el prompt en vez de enviarlo.
+
+    Antes rehacia el prompt por su cuenta, copiando el montaje del original. Esa
+    copia se separo del original en cuanto el prompt gano un bloque nuevo, y los
+    tests empezaron a mirar un texto que ya no era el que veria el modelo.
+    Heredando del anotador real eso no puede volver a pasar.
+    """
 
     ultimo_contexto = None
     ultimo_prompt = ""
 
-    def __init__(self, settings):
-        self._settings = settings
-
-    async def annotate(self, transcription, *, filename, contexto=None):
+    async def annotate(self, transcription, *, filename, contexto=None, idioma=None):
         _AnotadorEspia.ultimo_contexto = contexto
-
-        # Se reconstruye el prompt igual que lo haria un anotador real, para
-        # comprobar que el material acaba dentro del texto que ve el modelo.
-        from backend.annotator import prompts
-        from backend.annotator.base import BaseAnnotator, _build_metadata
-
-        class _Concreto(BaseAnnotator):
-            async def _complete(self, system_prompt, user_prompt):  # pragma: no cover
-                return ""
-
-        metadata = _build_metadata(transcription, filename)
-        metadata.update(_Concreto(self._settings)._contexto_de_la_materia(contexto))
-        _AnotadorEspia.ultimo_prompt = prompts.USER_PROMPT_TEMPLATE.format(
-            output_template=prompts.OUTPUT_TEMPLATE,
-            transcript=transcription.to_diarized_text(),
-            **metadata,
+        return await super().annotate(
+            transcription, filename=filename, contexto=contexto, idioma=idioma
         )
+
+    async def _complete(self, system_prompt, user_prompt):
+        _AnotadorEspia.ultimo_prompt = user_prompt
         return "# Apuntes\n\n## Resumen ejecutivo\n\nIntegracion por partes."
 
 

@@ -109,11 +109,32 @@ A continuacion tienes la transcripcion completa de una clase.
 {materia}
 {output_template}
 {material}
+{idioma}
 ---
 
 TRANSCRIPCION:
 
 {transcript}\
+"""
+
+# Bloque que se inserta cuando se piden los apuntes en un idioma concreto. Va
+# al final, pegado a la transcripcion, porque es una instruccion que el modelo
+# tiene que tener presente mientras escribe, no un dato de contexto.
+IDIOMA_TEMPLATE = """\
+
+---
+
+IDIOMA DE SALIDA
+
+Redacta los apuntes enteros en {nombre} ({endonimo}), aunque la clase se \
+imparta en otro idioma. Esta instruccion sustituye al principio 6.
+
+Traduces el contenido, no las etiquetas de quien habla: los nombres propios de \
+personas, obras, asignaturas y lugares se dejan como se dijeron. Una cita \
+literal del docente se conserva en el idioma original y lleva la traduccion \
+detras entre corchetes, porque el valor de una cita es que sea suya. La \
+terminologia tecnica usa el termino habitual en {nombre}, con el original \
+entre parentesis la primera vez que aparece.\
 """
 
 # Bloque que se inserta cuando el grupo tiene PDFs adjuntos. Va antes de la
@@ -192,6 +213,7 @@ conserva todo el detalle academico y las marcas de tiempo.
 {materia}
 {output_template}
 {material}
+{idioma}
 ---
 
 EXTRACTOS DE TRABAJO:

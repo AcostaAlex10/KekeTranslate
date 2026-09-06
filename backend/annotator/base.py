@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 
 from ..config import Settings
-from ..models import ContextoMateria, TranscriptionResult
+from ..models import IDIOMAS_POR_CODIGO, ContextoMateria, TranscriptionResult
 from ..pdf import recortar
 from . import prompts
 
@@ -44,11 +44,16 @@ class BaseAnnotator(ABC):
         *,
         filename: str,
         contexto: ContextoMateria | None = None,
+        idioma: str | None = None,
     ) -> str:
         """Devuelve los apuntes en Markdown de la clase transcrita.
 
         `contexto` trae la materia y el material (programa, guias) del grupo al
         que pertenece la clase, si esta archivada en uno.
+
+        `idioma` es el codigo del idioma en el que se piden los apuntes. Nulo
+        —el caso normal— deja que salgan en el de la clase. Nunca afecta a la
+        transcripcion, que se queda siempre como se dijo.
         """
         transcript = transcription.to_diarized_text()
         if not transcript.strip():
@@ -58,6 +63,7 @@ class BaseAnnotator(ABC):
 
         metadata = _build_metadata(transcription, filename)
         metadata.update(self._contexto_de_la_materia(contexto))
+        metadata["idioma"] = _bloque_de_idioma(idioma)
 
         if len(transcript) <= self._settings.annotation_single_pass_char_limit:
             return await self._single_pass(transcript, metadata)
@@ -131,6 +137,12 @@ class BaseAnnotator(ABC):
         # peticiones por minuto, asi que dispararlas juntas hacia fallar casi
         # todas con un 503 que ni siquiera parece un limite de ritmo. El orden
         # se restaura al recomponer la lista.
+        #
+        # Los extractos de trabajo NO se traducen: se quedan en el idioma de la
+        # clase y la traduccion ocurre una sola vez, al fusionarlos. Traducir
+        # cada fragmento por separado seria traducir dos veces —una al extracto
+        # y otra a los apuntes— y cada paso intermedio aleja el texto de lo que
+        # se dijo.
         partials = await self._con_ritmo(
             [
                 (
@@ -210,6 +222,23 @@ def _build_metadata(
         "speakers": ", ".join(speakers) if speakers else "no identificados",
         "processed_at": datetime.now().strftime("%d/%m/%Y"),
     }
+
+
+def _bloque_de_idioma(codigo: str | None) -> str:
+    """El bloque del prompt que pide los apuntes en un idioma concreto.
+
+    Devuelve cadena vacia cuando no se pidio ninguno, de modo que el prompt
+    queda exactamente igual que antes de que esto existiera. Un codigo que no
+    esta en la lista se ignora en vez de reventar: quedarse sin apuntes es peor
+    que tenerlos en el idioma de la clase, y el sitio donde se rechaza un
+    idioma invalido es la API, no aqui.
+    """
+    idioma = IDIOMAS_POR_CODIGO.get(codigo or "")
+    if idioma is None:
+        return ""
+    return prompts.IDIOMA_TEMPLATE.format(
+        nombre=idioma.nombre, endonimo=idioma.endonimo
+    )
 
 
 def _format_duration(seconds: float | None) -> str:

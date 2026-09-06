@@ -42,6 +42,8 @@ from .annotator import clave_del_anotador, modelo_del_anotador
 from .biblioteca import Biblioteca
 from .config import Settings, clave_completa, get_settings
 from .models import (
+    IDIOMAS_DE_APUNTES,
+    IDIOMAS_POR_CODIGO,
     Grupo,
     Job,
     JobStatus,
@@ -196,6 +198,10 @@ async def health(settings: Settings = Depends(get_settings)) -> dict:
         # Lo lee la interfaz para no dejar su cookie de sesion viva mas tiempo
         # del que el servidor va a aceptar el testigo que hay dentro.
         "dias_de_sesion": DIAS_DE_SESION,
+        # Los idiomas viajan aqui, y no en un endpoint propio, para que la
+        # interfaz no tenga su propia copia de la lista —que se separaria de la
+        # que valida el backend— ni pague una peticion mas por pantalla.
+        "idiomas_de_apuntes": [i.model_dump() for i in IDIOMAS_DE_APUNTES],
         # Se informa de si faltan claves sin exponer su valor.
         "transcription_key_configured": clave_completa(_provider_key(settings)),
         "annotator_key_configured": clave_completa(clave_del_anotador(settings)),
@@ -486,6 +492,7 @@ async def create_job(
     file: UploadFile,
     grupo_id: str | None = None,
     tema_id: str | None = None,
+    idioma: str | None = None,
     settings: Settings = Depends(get_settings),
     store: JobStore = Depends(get_store),
     biblioteca: Biblioteca = Depends(get_biblioteca),
@@ -495,6 +502,9 @@ async def create_job(
 
     Con `grupo_id` la clase queda archivada en ese grupo, y el material de la
     materia (programa, guias) entra en el prompt del anotador.
+
+    Con `idioma` los apuntes salen traducidos a ese idioma. La transcripcion
+    no: esa se queda siempre en el idioma en que se dio la clase.
     """
     filename = Path(file.filename or "grabacion").name
     extension = Path(filename).suffix.lower()
@@ -511,6 +521,8 @@ async def create_job(
     if grupo_id:
         _require_grupo(grupo_id, biblioteca, usuario)
 
+    idioma = _idioma_valido(idioma)
+
     job_id = uuid.uuid4().hex[:12]
     destination = settings.uploads_dir / f"{job_id}_{filename}"
 
@@ -526,6 +538,7 @@ async def create_job(
             usuario_id=usuario.id,
             grupo_id=grupo_id,
             tema_id=tema_id,
+            idioma_apuntes=idioma,
         )
     )
 
@@ -540,6 +553,7 @@ async def create_job(
 async def reanotar(
     job_id: str,
     background_tasks: BackgroundTasks,
+    idioma: str | None = None,
     settings: Settings = Depends(get_settings),
     store: JobStore = Depends(get_store),
     biblioteca: Biblioteca = Depends(get_biblioteca),
@@ -550,6 +564,11 @@ async def reanotar(
     Existe porque el anotador falla por causas ajenas al usuario (el modelo se
     satura o agota la cuota gratuita) y la transcripcion, que es la parte que
     se paga, ya esta hecha. Sin esto habria que volver a subir la clase entera.
+
+    Y es tambien por donde se cambia el idioma de unos apuntes ya escritos, que
+    es la unica forma de traducirlos sin volver a pagar la transcripcion. El
+    parametro distingue tres cosas: no mandarlo deja el idioma como estaba,
+    mandarlo vacio vuelve al idioma de la clase, y mandar un codigo traduce.
     """
     job = _require_job(job_id, store, usuario)
 
@@ -571,9 +590,17 @@ async def reanotar(
             ),
         )
 
+    cambios: dict = {"status": JobStatus.ANNOTATING, "error": None}
+    if idioma is not None:
+        cambios["idioma_apuntes"] = _idioma_valido(idioma)
+
+    # El idioma se guarda ANTES de encolar la tarea: es el trabajo guardado lo
+    # que lee el pipeline, asi que si se escribiera despues la tarea podria
+    # arrancar con el idioma viejo.
+    trabajo = store.update(job_id, **cambios)
     background_tasks.add_task(reanotar_job, job_id, settings, store, biblioteca)
     logger.info("Trabajo %s reencolado para reanotar", job_id)
-    return store.update(job_id, status=JobStatus.ANNOTATING, error=None)
+    return trabajo
 
 
 @app.get("/api/jobs", response_model=list[JobSummary])
@@ -1137,6 +1164,27 @@ async def borrar_nota(
 # ---------------------------------------------------------------------------
 # Auxiliares
 # ---------------------------------------------------------------------------
+
+
+def _idioma_valido(codigo: str | None) -> str | None:
+    """Comprueba el idioma pedido. Nulo o vacio significa el de la clase.
+
+    Se rechaza aqui, al entrar, y no al redactar: un codigo malo tiene que
+    saltar mientras quien lo mando sigue escuchando, no una hora despues
+    dejando una clase a medias.
+    """
+    if not codigo:
+        return None
+    if codigo not in IDIOMAS_POR_CODIGO:
+        admitidos = ", ".join(sorted(IDIOMAS_POR_CODIGO))
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"No se pueden pedir los apuntes en «{codigo}». "
+                f"Idiomas admitidos: {admitidos}."
+            ),
+        )
+    return codigo
 
 
 def _require_grupo(grupo_id: str, biblioteca: Biblioteca, usuario: Usuario) -> Grupo:

@@ -86,6 +86,9 @@ class BackendDeMentira:
                 "usuario_id": USUARIO["id"],
                 "grupo_id": "g0" if i % 2 else None,
                 "tema_id": None,
+                # Solo la primera lleva los apuntes traducidos: asi un test
+                # puede comprobar que se distingue de las demas en la lista.
+                "idioma_apuntes": "en" if i == 0 else None,
             }
             for i in range(clases)
         ]
@@ -144,6 +147,10 @@ class BackendDeMentira:
                 "annotator_key_configured": True,
                 "diarization_enabled": True,
                 "max_upload_bytes": 5_000_000_000,
+                "idiomas_de_apuntes": [
+                    {"codigo": "es", "nombre": "español", "endonimo": "español"},
+                    {"codigo": "en", "nombre": "inglés", "endonimo": "English"},
+                ],
             }
         if ruta == "/api/auth/yo":
             return USUARIO

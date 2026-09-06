@@ -79,7 +79,7 @@ class _AnotadorOk:
     def __init__(self, settings):
         pass
 
-    async def annotate(self, transcription, *, filename, contexto=None):
+    async def annotate(self, transcription, *, filename, contexto=None, idioma=None):
         return "# Apuntes\n\nContenido."
 
 
@@ -87,7 +87,7 @@ class _AnotadorQueFalla:
     def __init__(self, settings):
         pass
 
-    async def annotate(self, transcription, *, filename, contexto=None):
+    async def annotate(self, transcription, *, filename, contexto=None, idioma=None):
         raise AnnotationError("Claude devolvio una respuesta vacia")
 
 

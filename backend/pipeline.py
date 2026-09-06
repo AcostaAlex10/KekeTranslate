@@ -108,6 +108,7 @@ async def run_job(
             transcription,
             filename=job.filename,
             contexto=contexto_del_job(job, biblioteca),
+            idioma=job.idioma_apuntes,
         )
 
         notes_path = settings.results_dir / f"{job_id}_apuntes.md"
@@ -178,6 +179,7 @@ async def reanotar_job(
             resultado,
             filename=job.filename,
             contexto=contexto_del_job(job, biblioteca),
+            idioma=job.idioma_apuntes,
         )
 
         notes_path = settings.results_dir / f"{job_id}_apuntes.md"

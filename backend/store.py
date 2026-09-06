@@ -134,6 +134,7 @@ class JobStore:
                     error=data.get("error"),
                     grupo_id=data.get("grupo_id"),
                     tema_id=data.get("tema_id"),
+                    idioma_apuntes=data.get("idioma_apuntes"),
                 )
             )
         return summaries
