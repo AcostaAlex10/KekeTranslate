@@ -4,7 +4,7 @@ Ordenado por lo que desbloquea, no por lo que cuesta. Cada punto dice **qué**,
 **por qué** y **qué hay que decidir antes de empezar**, porque lo que más tiempo
 cuesta después es reconstruir el porqué.
 
-Actualizado el 2026-09-05. El estado de lo que ya funciona está en
+Actualizado el 2026-09-06. El estado de lo que ya funciona está en
 [`ESTADO.md`](ESTADO.md); el contexto de producto, en [`../PRODUCT.md`](../PRODUCT.md).
 
 ---
@@ -15,19 +15,26 @@ Actualizado el 2026-09-05. El estado de lo que ya funciona está en
 de sesión vive en `st.session_state`, que Streamlit tira al recargar. Cada F5
 devuelve a la pantalla de entrar.
 
-**Por qué está sin resolver.** Streamlit 1.41 no expone cookies. Las tres
-salidas, y por qué ninguna es gratis:
+**El paso previo ya está dado.** Se subió a Streamlit **1.42.2**, que es la
+primera versión con `st.context.cookies`, y se comprobó que los cuatro enganches
+de CSS de los que depende la interfaz siguen existiendo y siguen ganando. Ya no
+hay nada que investigar antes de escribir el código.
 
-| Salida | A favor | En contra |
-|---|---|---|
-| Testigo en la URL | No hace falta nada | Queda en el historial y en cualquier enlace copiado. Descartado. |
-| Componente de cookies de terceros | Resuelve hoy | La puerta de entrada queda colgando de un paquete ajeno con fama de caprichoso |
-| Subir Streamlit a 1.42+ | `st.context.cookies` es de la casa | Hay que revalidar los enganches de CSS (`st-key-…`, `data-testid`) de los que depende la interfaz |
+No se subió más arriba a propósito: de 1.43 en adelante Streamlit exige
+`starlette >= 0.46` y FastAPI 0.115 exige `< 0.42`. Se probó 1.63 y el backend
+deja de importar. Subir más obliga a subir FastAPI también.
 
-**Recomendado:** probar 1.42+ en una rama, correr los 192 tests y revisar a ojo
-el contraste del selector y la alineación de las listas. Si aguanta, es la vía
-buena. Si no, componente de terceros **como mejora**, nunca como requisito: si
-falla, se debe volver a pedir la contraseña, no quedarse fuera.
+**Lo que falta.** Guardar el testigo en una cookie al entrar y leerlo al
+arrancar. `st.context.cookies` es de **solo lectura**: Streamlit puede leerlas
+pero no escribirlas, así que la cookie hay que ponerla desde el navegador —un
+componente de altura cero, como el que ya declara el idioma— o desde el backend
+si algún día se sirve todo por el mismo origen.
+
+**Sin decidir:** cuánto dura la cookie. La sesión del servidor caduca a los 30
+días sin usarse; la cookie debería caducar igual o antes, nunca después.
+
+**Y una advertencia:** si la cookie falla, se debe volver a pedir la contraseña,
+nunca quedarse fuera. Es una comodidad, no un requisito.
 
 Resolver esto además cierra el hueco del punto 5: sin cookies no se puede atar
 el `state` de Google a un navegador concreto.
@@ -120,8 +127,6 @@ Ninguna es desarrollo; todas son media hora y cierran una duda.
 
 ## Higiene
 
-- `/impeccable polish`: es el paso que el propio skill pide después de `layout`.
-  Cerraría estados sueltos —vacíos, foco de teclado, la lista con 200 clases.
 - Un detalle que no tiene arreglo limpio: el campo de nombre de clase muestra
   «Press Enter to apply», en inglés, porque lo pone Streamlit. Ocultarlo se
   llevaría por delante el contador de caracteres, que sí sirve.
