@@ -133,9 +133,16 @@ def test_ofrece_grabar_y_subir(app):
 
 
 def test_el_modo_por_defecto_es_grabar(app):
-    """Grabar es el caso principal: dejar el movil en el aula y olvidarse."""
+    """Grabar es el caso principal: dejar el movil en el aula y olvidarse.
+
+    La grabadora no es un widget de Streamlit sino un componente propio, porque
+    ninguno de los que trae sube el audio mientras se graba. Se reconoce por su
+    boton, que vive dentro del iframe.
+    """
     assert radio_de(app, "modo_de_carga").value == "grabar"
-    assert app.get("audio_input"), "falta el widget de grabacion"
+
+    guiones = [m.proto.srcdoc for m in app.get("iframe")]
+    assert any("Empezar a grabar" in g for g in guiones), "falta la grabadora"
 
 
 def test_al_elegir_fichero_aparece_el_selector(app):

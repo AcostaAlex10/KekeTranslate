@@ -21,7 +21,7 @@ import pytest
 
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
 
-FICHEROS = ["frontend/app.py"]
+FICHEROS = ["frontend/app.py", "frontend/grabadora.py"]
 
 # Contenedores que Streamlit se niega a anidar uno dentro de otro.
 CONTENEDORES = {"expander", "popover"}

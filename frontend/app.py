@@ -9,17 +9,32 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import unicodedata
 from datetime import datetime
+from pathlib import Path
 
 import httpx
 import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
+# `streamlit run` mete el directorio del script en la ruta de import, pero
+# `AppTest` no: sin esta linea la app funciona a mano y revienta en los tests.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from grabadora import grabadora  # noqa: E402
+
 load_dotenv()
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
+
+# La URL del backend **tal y como la ve el navegador**, que no tiene por que ser
+# la misma. `BACKEND_URL` la usa el servidor de Streamlit, que vive en la misma
+# maquina que el backend; el navegador de quien graba puede estar en otra.
+# Mientras las dos cosas corran en el mismo equipo coinciden, y sirviendo la app
+# a la red local hay que decirlo aqui.
+BACKEND_PUBLICO = os.getenv("BACKEND_PUBLIC_URL", BACKEND_URL).rstrip("/")
 
 # La subida de una clase de varias horas puede tardar minutos: el timeout de
 # escritura se desactiva para no cortar la transferencia a mitad.
@@ -624,6 +639,16 @@ def fecha_corta(marca_iso: str) -> str:
     if momento.year == datetime.now(momento.tzinfo).year:
         return momento.strftime("%d/%m")
     return momento.strftime("%d/%m/%y")
+
+
+def formatear_tamano(bytes_: int | None) -> str:
+    """Convierte bytes en algo legible. Es lo unico que dice, mientras se
+    graba, que el audio esta llegando de verdad."""
+    if not bytes_:
+        return "sin audio todavía"
+    if bytes_ < 1_000_000:
+        return f"{bytes_ / 1000:.0f} kB"
+    return f"{bytes_ / 1e6:.1f} MB"
 
 
 def formatear_duracion(segundos: float | None) -> str:
@@ -1482,36 +1507,40 @@ if seccion == SECCIONES[0]:
 
     if modo == "grabar":
         st.markdown(
-            "Deja el teléfono cerca de quien habla y empieza a grabar. Al "
-            "parar, la grabación se envía sola a transcribir."
+            "Deja el teléfono cerca de quien habla y empieza a grabar. El "
+            "audio se va enviando mientras tanto, así que una clase entera no "
+            "se queda en la memoria del navegador ni se pierde si esto se "
+            "cierra a media clase."
         )
 
-        grabacion = st.audio_input("Grabación de la clase")
+        # El sitio del componente se reserva ANTES de pedir nada al backend, y
+        # esto no es manía: cualquier elemento que aparezca por encima recarga
+        # el iframe, y con él muere la grabación en curso. Una lectura que falle
+        # la caché pinta un «Cargando…» justo ahí, así que dentro de un
+        # contenedor creado de antemano el componente conserva su sitio pase lo
+        # que pase por encima. Está comprobado en un navegador de verdad y
+        # contado en `frontend/grabadora.py`.
+        sitio_de_la_grabadora = st.container()
 
-        if grabacion is not None:
-            tamano_mb = len(grabacion.getvalue()) / 1e6
-            nombre = f"clase_{datetime.now():%Y-%m-%d_%H%M}.wav"
-            st.audio(grabacion)
-            st.info(f"**{nombre}** — {tamano_mb:.1f} MB")
+        grupos_para_grabar = cargar_grupos()
 
-            destino = elegir_destino("grabacion")
-            idioma = elegir_idioma("grabacion")
+        with sitio_de_la_grabadora:
+            grabadora(
+                BACKEND_PUBLICO,
+                testigo(),
+                grupos_para_grabar,
+                idiomas_disponibles(),
+            )
 
-            if st.button("Transcribir y generar apuntes", type="primary"):
-                encolar(
-                    grabacion,
-                    nombre=nombre,
-                    grupo_id=destino[0],
-                    tema_id=destino[1],
-                    idioma=idioma,
-                )
-
-        st.warning(
-            "Esta grabadora es provisional: guarda el audio sin comprimir y no "
-            "envía nada hasta que la paras, así que solo aguanta clases cortas. "
-            "Para una clase de varias horas, graba con la app de tu teléfono y "
-            "súbela como fichero."
-        )
+        if "localhost" in BACKEND_PUBLICO or "127.0.0.1" in BACKEND_PUBLICO:
+            # `localhost` en el telefono apunta al propio telefono, no a esta
+            # maquina, asi que desde el movil los trozos no llegarian a ningun
+            # sitio. Es un aviso y no un impedimento: en el ordenador, que es
+            # donde se usa hoy, funciona.
+            st.caption(
+                "Desde el teléfono esto todavía no funciona: el navegador del "
+                "móvil no alcanza al backend. Ver `docs/movil.md`."
+            )
 
     else:
         st.markdown(
@@ -1565,6 +1594,16 @@ SIN_ARCHIVAR = "Sin archivar"
 TODAS_LAS_MATERIAS = "Todas las materias"
 
 
+def grabacion_sin_cerrar(clase: dict) -> bool:
+    """Una grabacion que se quedo a medias, o que sigue grabandose ahora.
+
+    Solo una grabacion tiene partes; una subida normal en curso no. Es la unica
+    forma de distinguir «esto se esta subiendo, espera» de «esto lleva asi desde
+    ayer porque se cerro el navegador y nadie va a moverlo».
+    """
+    return clase["status"] == "uploading" and clase.get("partes_recibidas", 0) > 0
+
+
 def dato_util_de(clase: dict) -> str:
     """Lo que conviene saber de una clase de un vistazo.
 
@@ -1576,7 +1615,9 @@ def dato_util_de(clase: dict) -> str:
     distingue en la lista unos apuntes traducidos de los normales; sin esto
     habria que abrir las clases una por una para saber cual es cual.
     """
-    if clase["status"] == "completed":
+    if grabacion_sin_cerrar(clase):
+        dato = f"Sin cerrar · {formatear_tamano(clase.get('file_size_bytes'))}"
+    elif clase["status"] == "completed":
         dato = formatear_duracion(clase.get("audio_duration_seconds"))
     else:
         dato = PALABRA_DE_ESTADO.get(clase["status"], "En proceso")
@@ -1734,6 +1775,30 @@ def ficha_de_clase(resumen: dict) -> None:
         )
         return
 
+    if grabacion_sin_cerrar(resumen):
+        # La mitad del valor de subir por trozos: si el telefono murio en el
+        # minuto 200, hay 200 minutos de clase esperando. Antes esto no existia
+        # y ese audio se quedaba en el servidor sin forma de llegar a el.
+        st.info(
+            f"Grabación sin cerrar · {transcurrido_desde(resumen['created_at'])} "
+            f"· {formatear_tamano(resumen.get('file_size_bytes'))}",
+            icon=":material/mic:",
+        )
+        st.caption(
+            "Si la estás grabando ahora en otra pestaña, déjala. Si se cortó "
+            "—se cerró el navegador, se apagó el teléfono—, lo que llegó a "
+            "subirse es audio válido y se puede procesar tal cual."
+        )
+        if st.button(
+            "Procesar lo grabado",
+            key=f"cerrar_{resumen['id']}",
+            type="primary",
+            icon=":material/play_arrow:",
+        ):
+            if api_llamar("POST", f"/api/jobs/{resumen['id']}/cerrar") is not None:
+                st.rerun()
+        return
+
     if estado in ESTADOS_EN_CURSO:
         # Se dice la etapa y cuanto lleva, y no se dibuja una barra de progreso:
         # la que habia usaba porcentajes inventados que no se movian en veinte
@@ -1830,7 +1895,14 @@ if seccion == SECCIONES[1]:
     trabajos = api_get("/api/jobs") or []
     grupos_por_id = {g["id"]: g for g in cargar_grupos()}
 
-    if any(t["status"] in ESTADOS_EN_CURSO for t in trabajos):
+    # Una grabacion sin cerrar no cuenta como "en curso": en el servidor no
+    # avanza nada, la mueve el navegador de quien graba. Contandola, la pantalla
+    # se repintaba cada quince segundos para siempre —y con ella se reiniciaba
+    # todo lo que se estuviera mirando—, porque ese estado no se acaba solo.
+    if any(
+        t["status"] in ESTADOS_EN_CURSO and not grabacion_sin_cerrar(t)
+        for t in trabajos
+    ):
         st.caption("Esta pantalla se actualiza sola cada 15 segundos.")
 
         # Un fragmento con temporizador es lo unico que hace falta: repinta la
