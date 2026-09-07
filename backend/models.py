@@ -161,6 +161,17 @@ class Job(BaseModel):
     transcript_diarized: str | None = None
     notes_markdown: str | None = None
 
+    # Cuantos trozos ha recibido una grabacion en directo. Cero en todo lo que
+    # llego como fichero de una sola pieza, que es como se distingue una cosa de
+    # la otra: solo una grabacion tiene partes.
+    #
+    # Sirve para dos cosas. Para detectar huecos: si llega la parte 7 cuando se
+    # esperaba la 5, se han perdido dos y el audio quedaria roto por dentro sin
+    # que nadie se entere hasta oirlo. Y para reconocer una grabacion que se
+    # quedo a medias —se cerro el navegador, se apago el telefono— y poder
+    # ofrecer procesar lo que si llego.
+    partes_recibidas: int = 0
+
     # Idioma en el que se piden los apuntes. Nulo —y es el caso normal— quiere
     # decir el de la clase, que es como se comporto siempre.
     #
@@ -225,6 +236,15 @@ class JobSummary(BaseModel):
     # Va en el listado, y no solo en la ficha, para que se vea de un vistazo
     # cual de las clases tiene los apuntes traducidos sin tener que abrirlas.
     idioma_apuntes: str | None = None
+
+    # Tambien en el listado: es lo que distingue una grabacion que se quedo a
+    # medias de una subida normal en curso, y sin eso no se podria ofrecer
+    # procesar lo que llego sin abrir la clase una por una.
+    partes_recibidas: int = 0
+
+    # Cuanto audio hay. En una grabacion sin cerrar es el unico dato que dice
+    # si merece la pena procesarla o si no llego a grabarse nada.
+    file_size_bytes: int | None = None
 
     @property
     def nombre_visible(self) -> str:

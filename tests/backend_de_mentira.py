@@ -54,6 +54,7 @@ class BackendDeMentira:
         grupos: int = 1,
         testigo: str = TESTIGO,
         dias_de_sesion: int | None = 30,
+        grabacion_sin_cerrar: bool = False,
     ) -> None:
         self.peticiones: Counter = Counter()
         self.testigo = testigo
@@ -89,9 +90,29 @@ class BackendDeMentira:
                 # Solo la primera lleva los apuntes traducidos: asi un test
                 # puede comprobar que se distingue de las demas en la lista.
                 "idioma_apuntes": "en" if i == 0 else None,
+                "partes_recibidas": 0,
+                "file_size_bytes": 40_000_000,
             }
             for i in range(clases)
         ]
+
+        if grabacion_sin_cerrar:
+            # Una grabacion que se corto: sigue en "uploading" y ya tiene audio.
+            self.trabajos.insert(0, {
+                "id": "grab1",
+                "filename": "clase interrumpida.webm",
+                "titulo": None,
+                "status": "uploading",
+                "created_at": ahora.isoformat(),
+                "audio_duration_seconds": None,
+                "error": None,
+                "usuario_id": USUARIO["id"],
+                "grupo_id": None,
+                "tema_id": None,
+                "idioma_apuntes": None,
+                "partes_recibidas": 4,
+                "file_size_bytes": 2_400_000,
+            })
 
         contador = self.peticiones
         cuerpo = self._cuerpo

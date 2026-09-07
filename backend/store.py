@@ -135,6 +135,8 @@ class JobStore:
                     grupo_id=data.get("grupo_id"),
                     tema_id=data.get("tema_id"),
                     idioma_apuntes=data.get("idioma_apuntes"),
+                    partes_recibidas=data.get("partes_recibidas", 0),
+                    file_size_bytes=data.get("file_size_bytes"),
                 )
             )
         return summaries

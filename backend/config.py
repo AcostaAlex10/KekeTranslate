@@ -72,6 +72,18 @@ class Settings(BaseSettings):
     # --- Almacenamiento y limites ---
     storage_dir: Path = Path("./storage")
     max_upload_mb: int = 5_120  # 5 GB, el tope del endpoint de AssemblyAI.
+
+    # De donde se acepta que el navegador llame a esta API. Hace falta desde que
+    # la grabadora sube los trozos **desde el navegador**: todo lo demas lo pide
+    # el servidor de Streamlit, que no pasa por CORS.
+    #
+    # Es una lista explicita y no un comodin a proposito. Con `*` cualquier
+    # pagina que alguien abriera podria hablar con este backend; que la API
+    # exija un testigo lo hace poco util, pero no hay motivo para regalarlo.
+    # Se anaden mas origenes por `.env` separados por comas, que es lo que hace
+    # falta al servir la app a la red local con otra IP.
+    app_url: str = "http://localhost:8501"
+    origenes_extra: str = ""
     # Entrar con Google. Vacios = la opcion no aparece y solo se entra con
     # correo y contrasena. El secreto no sale nunca del backend.
     google_client_id: str = ""
@@ -174,6 +186,22 @@ class Settings(BaseSettings):
         programa o un practico pesan pocos MB, y algo mayor suele ser un
         escaneo del que no se va a poder extraer texto igualmente."""
         return self.max_material_mb * 1024 * 1024
+
+    @property
+    def origenes_permitidos(self) -> list[str]:
+        """Los origenes desde los que el navegador puede llamar a esta API.
+
+        Se incluyen siempre las dos formas de decir "esta maquina" porque el
+        navegador las trata como origenes distintos y quien arranca la app usa
+        una u otra sin pensarlo.
+        """
+        origenes = [
+            self.app_url.rstrip("/"),
+            "http://localhost:8501",
+            "http://127.0.0.1:8501",
+        ]
+        origenes += [o.strip().rstrip("/") for o in self.origenes_extra.split(",")]
+        return sorted({o for o in origenes if o})
 
     def ensure_dirs(self) -> None:
         """Crea la estructura de carpetas de trabajo si no existe."""

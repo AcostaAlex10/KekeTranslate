@@ -36,6 +36,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from .annotator import clave_del_anotador, modelo_del_anotador
@@ -185,6 +186,32 @@ async def exigir_sesion(request: Request, call_next):
             )
         request.state.usuario = usuario
     return await call_next(request)
+
+
+# El navegador solo llama a esta API para una cosa: subir los trozos de una
+# grabacion en directo. Todo lo demas lo pide el servidor de Streamlit, que no
+# pasa por CORS. De ahi que la lista sea explicita y no un comodin: con `*`,
+# cualquier pagina que alguien abriera podria hablar con este backend.
+#
+# **Va despues del middleware de sesion a proposito, para quedar por fuera de
+# el.** Starlette envuelve al reves de como se lee: el ultimo que se anade es el
+# primero que ve la peticion. Puesto antes, el `OPTIONS` de comprobacion previa
+# —que el navegador manda sin la cabecera `Authorization`— chocaba con la
+# exigencia de sesion y se iba en un 401 antes de llegar aqui, con lo que el
+# navegador ni siquiera intentaba la subida. Y ademas, asi las respuestas de
+# error tambien llevan las cabeceras de CORS: sin ellas, un testigo caducado le
+# llega al componente como un fallo de red sin explicacion.
+#
+# `allow_credentials` se queda en falso adrede: la sesion viaja en la cabecera
+# `Authorization`, no en una cookie, asi que activarlo solo conseguiria que el
+# navegador mandase cookies a esta API sin ninguna necesidad.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_settings().origenes_permitidos,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 
 
 def usuario_actual(request: Request) -> Usuario:
@@ -558,6 +585,200 @@ async def create_job(
     # de una clase larga tarda mucho mas de lo que aguanta una conexion HTTP.
     background_tasks.add_task(run_job, job_id, settings, store, biblioteca, consumo)
     logger.info("Trabajo %s encolado (%s, %.1f MB)", job_id, filename, size / 1e6)
+    return job
+
+
+# ---------------------------------------------------------------------------
+# Grabar en directo, por trozos
+# ---------------------------------------------------------------------------
+#
+# La grabadora vieja guardaba la clase entera en la memoria del navegador y no
+# enviaba nada hasta que se paraba: una clase de 4 h eran unos 2,5 GB, y si el
+# telefono se quedaba sin bateria no quedaba nada.
+#
+# Aqui la clase se crea vacia al empezar y los trozos van llegando segun se
+# graban. Tres consecuencias que valen mas que el ahorro de memoria: se puede
+# cerrar el navegador y la clase sigue existiendo; una grabacion interrumpida
+# conserva todo lo que llego a subirse; y el tope de tamano se comprueba
+# mientras entra, no al final.
+#
+# Los trozos de `MediaRecorder` **no** son ficheros sueltos: solo el primero
+# lleva cabecera, y el fichero valido es la concatenacion de todos en orden. De
+# ahi que el orden se compruebe y que un hueco sea un error y no un aviso.
+
+TIPOS_DE_GRABACION = {
+    "audio/webm": ".webm",
+    "audio/ogg": ".ogg",
+    "audio/mp4": ".m4a",   # Safari no graba webm
+    "video/webm": ".webm",  # algun navegador etiqueta asi el audio solo
+}
+
+
+def _extension_de(tipo: str) -> str:
+    """La extension que le corresponde a lo que dice grabar el navegador.
+
+    El tipo llega como `audio/webm;codecs=opus`: la parte que importa es la de
+    delante. Un tipo desconocido se rechaza en vez de adivinar, porque el
+    proveedor de transcripcion valida por extension y un `.webm` que en realidad
+    fuera otra cosa fallaria mucho mas tarde y sin explicacion.
+    """
+    base = tipo.split(";")[0].strip().lower()
+    extension = TIPOS_DE_GRABACION.get(base)
+    if extension is None:
+        raise HTTPException(
+            status_code=415,
+            detail=(
+                f"Este navegador graba en «{base}», que no se admite. "
+                "Graba con la aplicación del teléfono y sube el fichero."
+            ),
+        )
+    return extension
+
+
+@app.post("/api/jobs/grabacion", response_model=Job, status_code=201)
+async def empezar_grabacion(
+    nombre: str | None = None,
+    tipo: str = "audio/webm",
+    grupo_id: str | None = None,
+    tema_id: str | None = None,
+    idioma: str | None = None,
+    settings: Settings = Depends(get_settings),
+    store: JobStore = Depends(get_store),
+    biblioteca: Biblioteca = Depends(get_biblioteca),
+    usuario: Usuario = Depends(usuario_actual),
+) -> Job:
+    """Abre una clase vacia a la que se le iran anadiendo trozos de audio.
+
+    La clase existe desde el primer segundo, asi que aparece en la lista como
+    «Grabando» y sobrevive a que se cierre el navegador.
+    """
+    if grupo_id:
+        _require_grupo(grupo_id, biblioteca, usuario)
+    idioma = _idioma_valido(idioma)
+
+    job_id = uuid.uuid4().hex[:12]
+    extension = _extension_de(tipo)
+    filename = f"{Path(nombre or 'clase').stem[:80]}{extension}"
+
+    job = store.create(
+        Job(
+            id=job_id,
+            filename=filename,
+            status=JobStatus.UPLOADING,
+            file_size_bytes=0,
+            provider=settings.transcription_provider,
+            usuario_id=usuario.id,
+            grupo_id=grupo_id,
+            tema_id=tema_id,
+            idioma_apuntes=idioma,
+        )
+    )
+    # El fichero se crea vacio ya: asi el primer trozo no depende de que el
+    # directorio exista, y una grabacion sin trozos deja rastro en disco igual.
+    (settings.uploads_dir / f"{job_id}_{filename}").touch()
+    logger.info("Trabajo %s abierto para grabar (%s)", job_id, filename)
+    return job
+
+
+@app.put("/api/jobs/{job_id}/parte", response_model=Job)
+async def anadir_parte(
+    job_id: str,
+    request: Request,
+    n: int,
+    settings: Settings = Depends(get_settings),
+    store: JobStore = Depends(get_store),
+    usuario: Usuario = Depends(usuario_actual),
+) -> Job:
+    """Anade el trozo `n` de una grabacion en curso.
+
+    El numero de trozo no es decorativo. Reenviar el que ya llego es normal
+    —el movil pierde la red un momento y el navegador reintenta—, y eso se
+    acepta sin hacer nada. Saltarse uno, en cambio, dejaria el audio roto por
+    dentro sin que nadie se entere hasta oirlo, asi que se rechaza diciendo cual
+    toca.
+    """
+    job = _require_job(job_id, store, usuario)
+
+    if job.status != JobStatus.UPLOADING:
+        raise HTTPException(
+            status_code=409,
+            detail="Esta grabación ya se cerró; no admite más audio.",
+        )
+
+    if n < job.partes_recibidas:
+        # Ya estaba. Se contesta que todo va bien para que el navegador siga.
+        return job
+    if n > job.partes_recibidas:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Falta audio: llegó el trozo {n} cuando tocaba el "
+                f"{job.partes_recibidas}. Vuelve a enviar desde ese."
+            ),
+        )
+
+    trozo = await request.body()
+    if not trozo:
+        raise HTTPException(status_code=400, detail="El trozo llegó vacío.")
+
+    destino = settings.uploads_dir / f"{job_id}_{job.filename}"
+    tamano = (job.file_size_bytes or 0) + len(trozo)
+    if tamano > settings.max_upload_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                "La grabación superó los "
+                f"{settings.max_upload_bytes // (1024 * 1024)} MB. "
+                "Párala y procésala; lo grabado hasta aquí no se pierde."
+            ),
+        )
+
+    with destino.open("ab") as fichero:
+        fichero.write(trozo)
+
+    return store.update(
+        job_id, partes_recibidas=n + 1, file_size_bytes=tamano
+    )
+
+
+@app.post("/api/jobs/{job_id}/cerrar", response_model=Job)
+async def cerrar_grabacion(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    settings: Settings = Depends(get_settings),
+    store: JobStore = Depends(get_store),
+    biblioteca: Biblioteca = Depends(get_biblioteca),
+    consumo: Consumo = Depends(get_consumo),
+    usuario: Usuario = Depends(usuario_actual),
+) -> Job:
+    """Da por terminada la grabacion y encola el procesado.
+
+    Sirve igual para una grabacion que acabo bien y para una que se corto: en
+    los dos casos lo que hay en disco es audio valido, solo que mas corto.
+    """
+    job = _require_job(job_id, store, usuario)
+
+    if job.status != JobStatus.UPLOADING:
+        raise HTTPException(
+            status_code=409, detail="Esta grabación ya se había cerrado."
+        )
+    if not job.partes_recibidas:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No llegó nada de audio, así que no hay clase que procesar. "
+                "Comprueba que diste permiso al micrófono."
+            ),
+        )
+
+    job = store.update(job_id, status=JobStatus.PENDING)
+    background_tasks.add_task(
+        run_job, job_id, settings, store, biblioteca, consumo
+    )
+    logger.info(
+        "Trabajo %s cerrado tras %d trozos (%.1f MB)",
+        job_id, job.partes_recibidas, (job.file_size_bytes or 0) / 1e6,
+    )
     return job
 
 
