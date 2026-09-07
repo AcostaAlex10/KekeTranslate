@@ -103,8 +103,11 @@ Tres cosas que un transcriptor genérico no hace:
   comprimir, unos 58 MB recomprimida a Opus— y el producto se apoya en que los
   apuntes basten. Del audio de una clase fallida sí se conserva la
   transcripción, que es la parte cara.
-- **La grabadora integrada es provisional**: guarda sin comprimir y no envía
-  nada hasta que se detiene, así que no sostiene una clase de varias horas.
+- **La grabadora sube la clase mientras se graba**, en trozos comprimidos: una
+  clase de 4 h pasa de unos 2,5 GB en la memoria del navegador a unos 58 MB que
+  van saliendo. Si se corta a media clase, lo que llegó a subirse se conserva y
+  se puede procesar. Lo que todavía no funciona es grabar **desde el teléfono**:
+  el navegador del móvil no alcanza al backend.
 - El nivel gratuito del anotador **no entrega generaciones largas** cuando se
   agota la cuota diaria; está medido y documentado en `docs/ESTADO.md`.
 

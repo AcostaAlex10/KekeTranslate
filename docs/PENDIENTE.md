@@ -4,9 +4,15 @@ Ordenado por lo que desbloquea, no por lo que cuesta. Cada punto dice **qué**,
 **por qué** y **qué hay que decidir antes de empezar**, porque lo que más tiempo
 cuesta después es reconstruir el porqué.
 
-Actualizado el 2026-09-06. Tres puntos salieron hoy de esta lista y están
+Actualizado el 2026-09-06. Cuatro puntos salieron hoy de esta lista y están
 contados en [`ESTADO.md`](ESTADO.md): que la sesión no sobrevivía a recargar la
-página, la traducción de los apuntes, y la medición del consumo por cuenta.
+página, la traducción de los apuntes, la medición del consumo por cuenta, y la
+grabadora que sube la clase mientras se graba.
+
+De la grabadora queda **grabar desde el teléfono**, que no es un fleco sino un
+cambio en cómo se sirve la app: los pasos exactos están en
+[`movil.md`](movil.md). No se hizo porque tocar el modo `--red` sin un móvil
+delante sería escribir a ciegas en la única vía que hoy funciona.
 
 Del consumo queda lo que no es código: **el modelo de cobro**. Los números ya se
 guardan; qué se cobra por ellos y cuánto es una decisión de negocio. Y una
@@ -23,20 +29,7 @@ defecto; ofrecerla sería añadir algo, no cambiar lo hecho. El estado de lo que
 
 ---
 
-## 1. La grabadora integrada no aguanta una clase
-
-**Qué pasa hoy.** Guarda sin comprimir y no envía nada hasta que se para. Una
-clase de 4 h son unos 2,5 GB en la memoria del navegador. Solo sirve para
-pruebas cortas, y la propia interfaz lo avisa.
-
-**Por qué importa.** Es el escenario «durante la clase» de `PRODUCT.md`: dejar el
-teléfono grabando. Hoy hay que grabar con la app del móvil y subir el fichero.
-
-**Qué haría falta:** grabar en trozos y subirlos según se generan, con
-`MediaRecorder` y un endpoint que reciba partes. Es un componente propio de
-Streamlit, no un widget de los que trae.
-
-## 2. Entrar con Google
+## 1. Entrar con Google
 
 **Estado.** Implementado y probado, pero **inactivo**: la opción no aparece
 hasta que existan `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`.
@@ -67,7 +60,7 @@ ahí. Ahora hay cookies, así que al encender Google conviene aprovecharlas para
 eso. El `state` sigue siendo de un solo uso y lo guarda el backend, que es lo
 que impide reutilizar un código de otro flujo.
 
-## 3. Recuperar la contraseña
+## 2. Recuperar la contraseña
 
 No existe, porque no hay envío de correo. Con una cuenta no importa; con dos, sí.
 Necesita un servicio de correo, que es otra dependencia externa y otra clave que

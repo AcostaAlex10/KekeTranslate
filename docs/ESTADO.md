@@ -331,11 +331,60 @@ mitad y un total a medias engaña más que un cero.
 Se comprobó además que el esquema nuevo se aplica limpio sobre la base de datos
 real —sobre una copia— sin tocar nada de lo que ya había.
 
+### La grabadora sube la clase mientras se graba (06/09/2026)
+
+La anterior guardaba la clase entera en la memoria del navegador y no enviaba
+nada hasta pararla: 4 h eran unos 2,5 GB, y si el teléfono se quedaba sin
+batería no quedaba nada. Ahora la clase se abre en el backend al empezar y los
+trozos van llegando según se graban, en Opus a 32 kbps: esas mismas 4 h son
+unos 58 MB.
+
+**Tres reglas del iframe, medidas en un navegador de verdad.** Son las que
+deciden el diseño entero, porque un `MediaRecorder` no sobrevive a una recarga:
+
+| Qué se hizo | Qué le pasó al componente |
+|---|---|
+| Tres repintados con el mismo HTML | Sobrevivió: una sola carga, contador continuo |
+| Meter un elemento **por encima** | Se recargó (el contador volvió de 19 s a 4 s) |
+| Cambiar su propio HTML | Se recargó |
+| Cambiar el contenido de un `st.empty()` que ya existía | **No** se recargó |
+
+De ahí que el componente no reciba ni un dato variable —todo su estado vive en
+JavaScript— y que hable **directamente con el backend**, sin pasar por Python.
+Es el único sitio de la app donde el navegador llama a la API, y el motivo de
+que el backend tenga CORS.
+
+**El protocolo, probado por el navegador y no solo con tests.** Crear la clase,
+tres trozos, reenviar uno y saltarse otro: el fichero en disco quedó siendo la
+concatenación exacta y en orden, el reenvío no se duplicó, y el salto se rechazó
+diciendo cuál tocaba. En el registro de red se ven las comprobaciones previas
+(`OPTIONS` → 200) antes de cada petición, que es lo que confirma que CORS quedó
+por fuera del middleware de sesión.
+
+**Lo único que no se pudo probar es el micrófono**, porque el navegador de
+pruebas bloquea la captura. Sí se comprobó lo que estaba en duda: el iframe de
+los componentes de Streamlit ya trae `allow="…; microphone; …"`, y dentro de él
+`featurePolicy.allowsFeature('microphone')` da `true`. Y el camino del permiso
+denegado se vio funcionar, con su mensaje.
+
+**Un fallo que apareció al probarlo.** Una grabación sin cerrar se queda en
+`uploading` para siempre, y ese estado contaba como «en curso»: la pantalla de
+*Mis clases* se repintaba cada quince segundos indefinidamente, reiniciando lo
+que se estuviera mirando. Ahora una grabación sin cerrar no cuenta —en el
+servidor no avanza nada, la mueve el navegador de quien graba— y se muestra como
+lo que es, con un botón para procesar lo que llegó.
+
+**Grabar desde el teléfono sigue sin funcionar**, y no por poco: la app se sirve
+por HTTPS y el backend por `http://127.0.0.1`, y un navegador no deja que una
+página `https://` llame a un `http://`. Los pasos exactos que faltan están en
+[`movil.md`](movil.md).
+
 ### Lo que NO está probado
 
 - El anotador de **Claude** con llamadas reales (sí el de Gemini).
 - Una clase de **4 horas**: lo más largo probado son 4 min 33 s.
-- Grabar desde el **móvil**.
+- Grabar desde el **móvil**: hoy no puede funcionar, ver arriba.
+- El **micrófono** de la grabadora nueva, de punta a punta con audio real.
 - Que el **PDF del programa cambie de verdad los apuntes** en una ejecución
   real. Está probado que el texto del PDF llega al prompt (hay tests que lo
   comprueban sobre el prompt montado), pero la generación final quedó bloqueada

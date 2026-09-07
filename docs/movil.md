@@ -55,8 +55,33 @@ cd "E:\claude code\keketranslate"; .\.venv\Scripts\python.exe -m uvicorn backend
 
 Desde el movil, en la misma WiFi: **https://192.168.1.34:8501**
 
-El backend (puerto 8000) no necesita estar expuesto: quien le habla es
-Streamlit desde la propia PC, no el navegador del movil.
+## Lo que falta para grabar desde el movil
+
+Esto ya no es cierto: **el backend tenia que estar expuesto**. Lo era mientras
+todo lo pedia Streamlit desde la propia PC, pero la grabadora nueva sube los
+trozos de audio **desde el navegador**, y el navegador del movil no alcanza a
+`127.0.0.1:8000`.
+
+Y no basta con abrir el puerto. La app se sirve por HTTPS —el microfono lo
+exige— y un navegador no deja que una pagina `https://` llame a un `http://`,
+asi que el backend tambien tiene que ir por HTTPS. Lo que haria falta:
+
+1. Arrancar uvicorn con `--host 0.0.0.0` y los mismos certificados de `certs/`.
+   El certificado ya vale: su lista de nombres incluye la IP, `127.0.0.1` y
+   `localhost`, asi que sirve para los dos puertos a la vez.
+2. Decirle a la interfaz por donde llega el navegador al backend:
+   `BACKEND_PUBLIC_URL=https://TU_IP:8000`.
+3. Anadir ese origen a los admitidos: `ORIGENES_EXTRA=https://TU_IP:8501`.
+4. Que el servidor de Streamlit confie en la CA propia al hablar con el backend
+   por HTTPS, o el propio Python rechazara el certificado.
+5. Abrir tambien el 8000 en el firewall de Windows.
+
+Nada de esto esta probado, y por eso no viene hecho: cambiar el modo `--red` sin
+un movil delante seria escribir a ciegas en la unica via que hoy funciona.
+
+Mientras tanto, **desde el movil se graba con la app del telefono y se sube el
+fichero**, que es lo que se venia haciendo. La grabadora integrada funciona en
+el ordenador.
 
 ## Esto no sirve para usuarios finales
 

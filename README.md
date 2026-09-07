@@ -89,6 +89,10 @@ KekeTranslate/
 │   ├── biblioteca.py              # Grupos, temas, material y notas
 │   ├── usuarios.py                # Cuentas, contrasenas y sesiones
 │   ├── consumo.py                 # Libro de cuentas: minutos y peticiones por cuenta
+│   └── ...
+├── frontend/
+│   ├── app.py                     # La interfaz
+│   └── grabadora.py               # Grabadora que sube la clase por trozos
 │   ├── pdf.py                     # Extraer el texto de los PDF adjuntos
 │   ├── pipeline.py                # Orquestación audio → transcripción → apuntes
 │   ├── media.py                   # ffmpeg: duración y segmentación
@@ -160,6 +164,9 @@ proveedor de transcripción y la del anotador:
 | `STORAGE_DIR` | — | `./storage` | Audios, transcripciones y apuntes |
 | `MAX_UPLOAD_MB` | — | `5120` | Tope del backend (5 GB, el de AssemblyAI). Streamlit corta antes, en 1 GB: ver `.streamlit/config.toml` |
 | `BACKEND_URL` | — | `http://localhost:8000` | URL que consume el frontend |
+| `BACKEND_PUBLIC_URL` | — | *(la de arriba)* | La misma URL **vista desde el navegador**. Solo la usa la grabadora, que es lo único que llama a la API desde el navegador |
+| `APP_URL` | — | `http://localhost:8501` | Desde dónde se acepta que el navegador llame a la API (CORS) |
+| `ORIGENES_EXTRA` | — | *(vacío)* | Más orígenes admitidos, separados por comas |
 
 > **Cuidado:** el fichero `.env` está en `.gitignore`. **Nunca subas tus claves al repositorio.**
 
@@ -272,6 +279,9 @@ curl -H "Authorization: Bearer $TESTIGO" \
 | `POST` | `/api/auth/contrasena` | Pone o cambia la contraseña; cierra el resto de sesiones |
 | `GET` \| `POST` | `/api/auth/google` | Entrar con Google, si el servidor lo tiene configurado |
 | `POST` | `/api/jobs` | Sube una grabación y encola el trabajo (`?idioma=en` para pedir los apuntes traducidos) |
+| `POST` | `/api/jobs/grabacion` | Abre una clase vacía para grabar en directo |
+| `PUT` | `/api/jobs/{id}/parte?n=` | Añade el trozo `n` de una grabación en curso |
+| `POST` | `/api/jobs/{id}/cerrar` | Cierra la grabación y encola el procesado |
 | `GET` | `/api/jobs` | Lista los trabajos recientes |
 | `GET` | `/api/consumo` | Lo que ha consumido tu cuenta: este mes y desde siempre |
 | `GET` | `/api/jobs/{id}` | Estado completo, transcripción y apuntes |

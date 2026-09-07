@@ -104,6 +104,13 @@ comprueban propiedad.
 **Lo ajeno devuelve 404, nunca 403.** Un 403 confirmaría que ese identificador
 existe. `tests/test_auth.py` lo verifica.
 
+**El navegador solo llama a la API para una cosa: subir los trozos de una
+grabación.** Todo lo demás lo pide el servidor de Streamlit, que no pasa por
+CORS. Por eso `CORSMiddleware` lleva una lista explícita de orígenes y **se
+añade después** del middleware de sesión, para quedar por fuera de él: Starlette
+envuelve al revés de como se lee, y puesto antes, el `OPTIONS` de comprobación
+previa —que va sin `Authorization`— se iba en un 401.
+
 **El enlace compartido es la única puerta sin cuenta.** Vive en
 `/api/compartido/{token}/...` y solo abre el grupo al que apunta. No reutilices
 los endpoints normales para el visitante: exigen sesión.
@@ -140,6 +147,14 @@ más cuestan de redescubrir:
 - **Tras un `st.rerun()`, `AppTest` conserva los elementos de la pasada
   abandonada.** Un test que compruebe «ya no está el botón X» pasará a verde
   por error. Comprueba la presencia de algo de la pantalla nueva.
+- **Un `components.html` sobrevive al repintado solo si nada le cambia
+  alrededor.** Comprobado en un navegador: con el mismo HTML aguanta repintados
+  indefinidos; meter o quitar un elemento **por encima** lo recarga; cambiarle
+  el HTML también. De ahí que la grabadora (`frontend/grabadora.py`) no reciba
+  ni un dato variable y que lo que va encima viva en huecos (`st.empty()`) o en
+  un `st.container()` creado de antemano —cambiar el contenido de un hueco no lo
+  recarga—. Un `MediaRecorder` no sobrevive a una recarga, y con él muere la
+  clase que se esté grabando.
 
 ### Iconos y CSS
 
