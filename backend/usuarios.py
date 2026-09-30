@@ -21,6 +21,7 @@ valer en el acto. Un JWT firmado seguiria siendo valido hasta que caduque.
 
 from __future__ import annotations
 
+import hmac
 import re
 import secrets
 import sqlite3
@@ -70,6 +71,7 @@ CREATE INDEX IF NOT EXISTS idx_sesiones_usuario ON sesiones (usuario_id);
 
 CREATE TABLE IF NOT EXISTS estados_oauth (
     estado      TEXT PRIMARY KEY,
+    vinculo     TEXT,
     created_at  TEXT NOT NULL
 );
 """
@@ -96,6 +98,15 @@ class Usuarios:
         self._hasher = PasswordHasher()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
+            # Una base anterior al vinculo tiene la tabla sin esa columna, y
+            # `CREATE TABLE IF NOT EXISTS` no la toca. Los estados que hubiera
+            # se quedan con el vinculo vacio y ya no se aceptan, que es lo
+            # correcto: viven diez minutos y no se sabe que navegador los pidio.
+            columnas = {
+                f["name"] for f in conn.execute("PRAGMA table_info(estados_oauth)")
+            }
+            if columnas and "vinculo" not in columnas:
+                conn.execute("ALTER TABLE estados_oauth ADD COLUMN vinculo TEXT")
             conn.executescript(_SCHEMA)
 
     def _connect(self) -> sqlite3.Connection:
@@ -274,32 +285,55 @@ class Usuarios:
 
     # -- Estado del flujo de Google ----------------------------------------
 
-    def nuevo_estado(self) -> str:
-        """Crea el `state` que viaja a Google y vuelve con el codigo.
+    def nuevo_estado(self) -> tuple[str, str]:
+        """Crea el `state` que viaja a Google y el vinculo que lo ata al navegador.
 
-        Sirve para que el backend solo acepte codigos de un flujo que empezo
-        aqui, en vez de cualquier cosa que llegue con la forma correcta. Es de
-        un solo uso y caduca.
+        El `state` solo garantiza que el flujo empezo aqui, no quien lo
+        empezo. Sin mas, alguien podia empezarlo el mismo, entrar en Google con
+        su cuenta, quedarse con la URL de vuelta sin abrirla y mandarsela a
+        otra persona: al abrirla, esa persona entraba en la cuenta del
+        atacante, y lo que subiera despues —sus clases— lo leia el.
+
+        El vinculo cierra eso. Se lo queda el navegador que pulso el boton, en
+        una cookie, y nunca aparece en una URL: ni en la de Google, ni en la de
+        vuelta, ni en el historial. Un enlace fabricado por otro llega sin el.
+
+        Devuelve `(estado, vinculo)`. Los dos son de un solo uso y caducan.
         """
         estado = secrets.token_urlsafe(24)
+        vinculo = secrets.token_urlsafe(24)
         with self._lock, self._connect() as conn:
             conn.execute(
-                "INSERT INTO estados_oauth (estado, created_at) VALUES (?, ?)",
-                (estado, _ahora().isoformat()),
+                "INSERT INTO estados_oauth (estado, vinculo, created_at)"
+                " VALUES (?, ?, ?)",
+                (estado, vinculo, _ahora().isoformat()),
             )
-        return estado
+        return estado, vinculo
 
-    def consumir_estado(self, estado: str) -> bool:
-        """Gasta un estado. Devuelve `False` si no existia o ya caduco."""
+    def consumir_estado(self, estado: str, vinculo: str) -> bool:
+        """Gasta un estado. Solo vale si llega con su vinculo y no ha caducado.
+
+        El estado se borra aunque el vinculo no coincida. Un solo uso quiere
+        decir un solo intento: si se dejara vivo tras un fallo, quien fabrico
+        el enlace podria seguir probandolo mientras no caduque.
+        """
         if not estado:
             return False
         limite = (_ahora() - timedelta(minutes=MINUTOS_DE_ESTADO)).isoformat()
         with self._lock, self._connect() as conn:
             conn.execute("DELETE FROM estados_oauth WHERE created_at < ?", (limite,))
-            cursor = conn.execute(
-                "DELETE FROM estados_oauth WHERE estado = ?", (estado,)
-            )
-        return cursor.rowcount > 0
+            fila = conn.execute(
+                "SELECT vinculo FROM estados_oauth WHERE estado = ?", (estado,)
+            ).fetchone()
+            conn.execute("DELETE FROM estados_oauth WHERE estado = ?", (estado,))
+
+        if fila is None or not fila["vinculo"] or not vinculo:
+            return False
+        # Con un intento por estado, el tiempo de la comparacion no le da nada
+        # a nadie; `compare_digest` es la costumbre para secretos y no cuesta.
+        # Va en bytes porque con `str` lanza TypeError ante cualquier caracter
+        # no ASCII, y el vinculo lo manda el cliente: seria un 500 a voluntad.
+        return hmac.compare_digest(fila["vinculo"].encode(), vinculo.encode())
 
 
 # Cuanto vive un estado de OAuth sin usarse. Es el tiempo que tarda alguien en

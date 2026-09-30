@@ -62,7 +62,7 @@ from .pdf import PdfSinTexto, extraer_texto
 from .pipeline import reanotar_job, run_job
 from .store import JobStore
 from .tls import usar_certificados_del_sistema
-from .usuarios import DIAS_DE_SESION, ErrorDeCuenta, Usuarios
+from .usuarios import DIAS_DE_SESION, MINUTOS_DE_ESTADO, ErrorDeCuenta, Usuarios
 
 logging.basicConfig(
     level=logging.INFO,
@@ -380,17 +380,22 @@ async def empezar_con_google(
     settings: Settings = Depends(get_settings),
     usuarios: Usuarios = Depends(get_usuarios),
 ) -> dict:
-    """Devuelve la URL de Google a la que mandar el navegador.
+    """Devuelve la URL de Google a la que mandar el navegador, y el vinculo.
 
     El `state` lo crea y lo guarda el backend, y solo vale una vez: asi no se
-    acepta un codigo que venga de un flujo que no empezo aqui.
+    acepta un codigo que venga de un flujo que no empezo aqui. El `vinculo`
+    ata ese flujo al navegador que lo empezo; el cliente tiene que guardarlo
+    fuera de la URL (una cookie) y devolverlo a la vuelta. Ver
+    `Usuarios.nuevo_estado` para el ataque que evita.
+
+    `segundos` dice cuanto vive, para que la cookie no dure mas que el estado.
     """
     if not (settings.google_client_id and settings.google_client_secret):
         raise HTTPException(
             status_code=503,
             detail="Entrar con Google no está configurado en este servidor.",
         )
-    estado = usuarios.nuevo_estado()
+    estado, vinculo = usuarios.nuevo_estado()
     consulta = urlencode(
         {
             "client_id": settings.google_client_id,
@@ -401,7 +406,12 @@ async def empezar_con_google(
             "prompt": "select_account",
         }
     )
-    return {"url": f"{GOOGLE_AUTH_URL}?{consulta}", "state": estado}
+    return {
+        "url": f"{GOOGLE_AUTH_URL}?{consulta}",
+        "state": estado,
+        "vinculo": vinculo,
+        "segundos": MINUTOS_DE_ESTADO * 60,
+    }
 
 
 @app.post("/api/auth/google")
@@ -409,12 +419,18 @@ async def entrar_con_google(
     code: str = Body(...),
     redirect_uri: str = Body(...),
     state: str = Body(""),
+    vinculo: str = Body(""),
     settings: Settings = Depends(get_settings),
     usuarios: Usuarios = Depends(get_usuarios),
     store: JobStore = Depends(get_store),
     biblioteca: Biblioteca = Depends(get_biblioteca),
 ) -> dict:
-    """Cambia el codigo que devolvio Google por una sesion nuestra."""
+    """Cambia el codigo que devolvio Google por una sesion nuestra.
+
+    Exige el `vinculo` que se entrego al empezar. El `state` viaja en la URL y
+    cualquiera que tenga el enlace lo tiene; el vinculo solo lo tiene el
+    navegador que pulso el boton.
+    """
     if not (settings.google_client_id and settings.google_client_secret):
         raise HTTPException(
             status_code=503,
@@ -424,12 +440,16 @@ async def entrar_con_google(
             ),
         )
 
-    if not usuarios.consumir_estado(state):
+    # Se comprueba antes de canjear el codigo: si no es de este navegador, no
+    # se habla con Google ni se llega a saber de quien es la cuenta.
+    if not usuarios.consumir_estado(state, vinculo):
         raise HTTPException(
             status_code=400,
             detail=(
-                "Ese intento de entrar con Google ya no vale. Vuelve a pulsar "
-                "el botón para empezar de nuevo."
+                "Ese intento de entrar con Google no empezó en este navegador, "
+                "o ya no vale. Vuelve a pulsar el botón para empezar de nuevo. "
+                "Si vuelve a pasar, comprueba que el navegador acepta cookies "
+                "de este sitio."
             ),
         )
 
