@@ -277,7 +277,8 @@ curl -H "Authorization: Bearer $TESTIGO" \
 | `POST` | `/api/auth/salir` | Cierra esta sesión; el testigo deja de valer |
 | `GET` | `/api/auth/yo` | Quién es el dueño del testigo |
 | `POST` | `/api/auth/contrasena` | Pone o cambia la contraseña; cierra el resto de sesiones |
-| `GET` \| `POST` | `/api/auth/google` | Entrar con Google, si el servidor lo tiene configurado |
+| `POST` | `/api/auth/google/inicio` | Empieza a entrar con Google: devuelve la URL de Google y el `vinculo` que el cliente guarda fuera de la URL · **sin sesión** |
+| `GET` \| `POST` | `/api/auth/google` | Configuración de Google / termina de entrar; el `POST` exige el `state` y su `vinculo` · **sin sesión** |
 | `POST` | `/api/jobs` | Sube una grabación y encola el trabajo (`?idioma=en` para pedir los apuntes traducidos) |
 | `POST` | `/api/jobs/grabacion` | Abre una clase vacía para grabar en directo |
 | `PUT` | `/api/jobs/{id}/parte?n=` | Añade el trozo `n` de una grabación en curso |

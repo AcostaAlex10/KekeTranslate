@@ -4,10 +4,14 @@ Ordenado por lo que desbloquea, no por lo que cuesta. Cada punto dice **qué**,
 **por qué** y **qué hay que decidir antes de empezar**, porque lo que más tiempo
 cuesta después es reconstruir el porqué.
 
-Actualizado el 2026-09-06. Cuatro puntos salieron hoy de esta lista y están
-contados en [`ESTADO.md`](ESTADO.md): que la sesión no sobrevivía a recargar la
-página, la traducción de los apuntes, la medición del consumo por cuenta, y la
-grabadora que sube la clase mientras se graba.
+Actualizado el 2026-09-30: entrar con Google ya funciona en el navegador y el
+`state` está atado al navegador que lo pidió. No funcionaba, aunque aquí ponía
+que sí; lo que pasaba está en [`ESTADO.md`](ESTADO.md).
+
+El 2026-09-06 salieron de esta lista otros cuatro puntos, también contados en
+[`ESTADO.md`](ESTADO.md): que la sesión no sobrevivía a recargar la página, la
+traducción de los apuntes, la medición del consumo por cuenta, y la grabadora
+que sube la clase mientras se graba.
 
 De la grabadora queda **grabar desde el teléfono**, que no es un fleco sino un
 cambio en cómo se sirve la app: los pasos exactos están en
@@ -31,8 +35,14 @@ defecto; ofrecerla sería añadir algo, no cambiar lo hecho. El estado de lo que
 
 ## 1. Entrar con Google
 
-**Estado.** Implementado y probado, pero **inactivo**: la opción no aparece
-hasta que existan `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`.
+**Estado.** Implementado, probado en Chromium hasta el servidor de tokens de
+Google, e **inactivo**: la opción no aparece hasta que existan
+`GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`.
+
+Hasta el 30/09 aquí ponía «implementado y probado». No lo estaba: ningún test lo
+había encendido, y encendido tiraba la app al pulsar el botón. Arreglado, junto
+con el `state` que no estaba atado al navegador; los detalles, en
+[`ESTADO.md`](ESTADO.md).
 
 **No está bloqueado por nada.** Se llegó a anotar que la prueba gratuita de 90
 días de Google Cloud lo impedía. Es falso, y conviene dejarlo escrito para no
@@ -51,14 +61,13 @@ volver a perder tiempo buscando alternativas:
 
 **Lo que hay que hacer, entonces:** crear el proyecto, configurar el consent
 screen, sacar client ID y secreto, y ponerlos en el `.env` con
-`run.py --configurar`. Es media hora de consola, no desarrollo.
+`run.py --configurar`. Es media hora de consola. En la consola, la *URI de
+redirección autorizada* tiene que ser exactamente la de `APP_URL` (por defecto
+`http://localhost:8501`), sin barra final: es la que la app manda a Google.
 
-**Ya no está esperando a nada.** Lo que lo frenaba era que sin cookies no se
-podía atar el `state` de Google a un navegador concreto: alguien podía fabricar
-un enlace que te metiera en *su* cuenta, y las clases que subieras irían a parar
-ahí. Ahora hay cookies, así que al encender Google conviene aprovecharlas para
-eso. El `state` sigue siendo de un solo uso y lo guarda el backend, que es lo
-que impide reutilizar un código de otro flujo.
+Después, **entrar una vez con una cuenta real** para cerrar lo único que no se
+pudo probar sin credenciales: el canje del código de verdad y la creación de la
+cuenta a partir de lo que devuelve Google.
 
 ## 2. Recuperar la contraseña
 

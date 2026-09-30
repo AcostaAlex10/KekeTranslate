@@ -115,6 +115,15 @@ previa —que va sin `Authorization`— se iba en un 401.
 `/api/compartido/{token}/...` y solo abre el grupo al que apunta. No reutilices
 los endpoints normales para el visitante: exigen sesión.
 
+**Google: el `state` no basta, hace falta el vínculo.** El `state` viaja en la
+URL, así que lo tiene cualquiera con el enlace de vuelta. Sin más, alguien podía
+fabricar una URL de vuelta con *su* código y meter a otra persona en *su*
+cuenta. `POST /api/auth/google/inicio` entrega además un `vinculo`, que el
+frontend guarda en la cookie `keke_google` y devuelve al volver;
+`Usuarios.consumir_estado` exige los dos y gasta el estado aunque falle.
+`tests/test_google.py` fija el ataque. Un cliente nuevo que entre con Google
+tiene que guardar el vínculo fuera de la URL.
+
 ## Streamlit: restricciones que ya causaron fallos
 
 Están documentadas en comentarios largos dentro de `frontend/app.py`. Las que
@@ -155,6 +164,17 @@ más cuestan de redescubrir:
   un `st.container()` creado de antemano —cambiar el contenido de un hueco no lo
   recarga—. Un `MediaRecorder` no sobrevive a una recarga, y con él muere la
   clase que se esté grabando.
+- **Un componente no puede mover la página entera.** El iframe de
+  `components.html` lleva `sandbox` sin `allow-top-navigation`, y Chrome bloquea
+  `window.parent.location.href = ...` sin más aviso que la consola. Para
+  navegar, crea un `<a>` en `window.parent.document` y llama a `.click()`: el
+  enlace navega en nombre del documento principal. Escribir cookies en el padre
+  sí funciona tal cual.
+- **El script corre de arriba abajo, también las funciones.** Una función
+  llamada por código de nivel de módulo —la pantalla de entrar corre así— tiene
+  que estar definida **antes** de ese código, o da `NameError` solo cuando se
+  toma ese camino. Así estuvo roto entrar con Google, con `enlace_base()`
+  definida cientos de líneas más abajo.
 
 ### Iconos y CSS
 

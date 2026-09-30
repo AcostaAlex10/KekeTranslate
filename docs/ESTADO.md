@@ -379,8 +379,60 @@ por HTTPS y el backend por `http://127.0.0.1`, y un navegador no deja que una
 página `https://` llame a un `http://`. Los pasos exactos que faltan están en
 [`movil.md`](movil.md).
 
+### Entrar con Google no funcionaba, y tenía un agujero (30/09/2026)
+
+Se daba por «implementado y probado, pero inactivo», a falta de poner las
+credenciales. No era así: ningún test lo había encendido nunca, y al encenderlo
+aparecieron tres cosas.
+
+**Uno: pulsar el botón tiraba la app.** `enlace_base()` estaba definida al lado
+de los grupos, cientos de líneas por debajo de la pantalla de entrar. Streamlit
+ejecuta el script de arriba abajo, así que cuando el flujo de Google la llamaba
+todavía no existía: `NameError` al pulsar, y también al volver de Google.
+
+**Dos: aun sin eso, el botón no habría hecho nada.** Navegaba con
+`window.parent.location.href` desde un componente, y Streamlit mete los
+componentes en un iframe con `sandbox` sin `allow-top-navigation`. Chrome lo
+bloquea y solo lo dice en la consola:
+
+```
+Unsafe attempt to initiate navigation for frame with URL 'http://localhost:8501/'
+from frame with URL 'about:srcdoc'. The frame attempting navigation of the
+top-level window is sandboxed, but the flag of 'allow-top-navigation' or
+'allow-top-navigation-by-user-activation' is not set.
+```
+
+Ahora el guion crea un enlace en el documento principal y lo pulsa: un enlace
+navega en nombre del documento al que pertenece, que no está en el sandbox.
+
+**Tres: el agujero.** El `state` garantizaba que el flujo empezó en este
+servidor, pero no qué navegador lo empezó. Alguien podía pulsar el botón, entrar
+en Google con su cuenta, quedarse con la URL de vuelta sin abrirla y mandársela a
+otra persona. Al abrirla, esa persona entraba en la cuenta del atacante sin darse
+cuenta, y las clases que subiera después las leía él. Se comprobó que era real:
+el test del ataque, corrido contra el código anterior, entraba (`200`).
+
+Ahora cada `state` lleva un **vínculo** que el navegador que pulsó el botón
+guarda en una cookie, y que nunca viaja en una URL. El backend no acepta la
+vuelta sin él, lo comprueba antes de hablar con Google, y gasta el estado
+también cuando falla, para que no se pueda seguir probando.
+
+**Probado en Chromium, contra el backend y Streamlit de verdad**, con Google
+interceptado a la ida:
+
+| Qué se hizo | Qué pasó |
+|---|---|
+| Pulsar *Entrar con Google* | Navega a Google; la cookie `keke_google` queda guardada antes, con 10 min de vida, y el vínculo no aparece en la URL |
+| Volver en el mismo navegador | Pasa la comprobación y llega al servidor de tokens de Google, que rechaza el client ID falso (`invalid_client`) |
+| Abrir la URL de vuelta de otro navegador | Rechazado sin hablar con Google, con un mensaje que dice qué hacer |
+
+Lo que falta es lo que no se puede hacer sin credenciales: el recorrido entero
+con un client ID de verdad y una cuenta de Google real.
+
 ### Lo que NO está probado
 
+- **Entrar con Google** con credenciales reales. Está probado en Chromium hasta
+  el servidor de tokens de Google; ver la sección anterior.
 - El anotador de **Claude** con llamadas reales (sí el de Gemini).
 - Una clase de **4 horas**: lo más largo probado son 4 min 33 s.
 - Grabar desde el **móvil**: hoy no puede funcionar, ver arriba.
