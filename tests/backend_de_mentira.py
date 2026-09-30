@@ -9,12 +9,25 @@ from __future__ import annotations
 
 import json
 import threading
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import NamedTuple
 from urllib.parse import urlparse
 
 TESTIGO = "testigo-de-prueba"
+
+# Lo que entrega `/api/auth/google/inicio`. El vinculo tiene la forma de un
+# `token_urlsafe`, como el de verdad, porque el frontend la comprueba.
+VINCULO = "vinculo-de-prueba-con-forma-de-testigo"
+ESTADO = "estado-de-prueba"
+
+
+class Respuesta(NamedTuple):
+    """Para contestar algo distinto de un 200 desde `_cuerpo`."""
+
+    codigo: int
+    cuerpo: object
 
 # Lo que se puede pedir sin haber entrado, igual que `RUTAS_ABIERTAS` en el
 # backend de verdad. `/api/auth/yo` queda fuera a proposito: alli tambien pide
@@ -36,6 +49,7 @@ RUTAS_CONOCIDAS = {
     "api", "jobs", "grupos", "temas", "materiales", "notas", "health",
     "notes", "transcript", "compartido", "ubicacion", "titulo", "clases",
     "auth", "yo", "google", "entrar", "registro", "salir", "consumo",
+    "inicio",
 }
 
 
@@ -55,9 +69,18 @@ class BackendDeMentira:
         testigo: str = TESTIGO,
         dias_de_sesion: int | None = 30,
         grabacion_sin_cerrar: bool = False,
+        google_activo: bool = False,
+        google_rechaza_la_vuelta: bool = False,
+        inicio_sin_vinculo: bool = False,
     ) -> None:
         self.peticiones: Counter = Counter()
+        # El cuerpo JSON de cada POST, por ruta, en el orden en que llegaron.
+        self.recibidos: defaultdict[str, list] = defaultdict(list)
         self.testigo = testigo
+        self.google_activo = google_activo
+        self.google_rechaza_la_vuelta = google_rechaza_la_vuelta
+        # Imita a un backend anterior al vinculo.
+        self.inicio_sin_vinculo = inicio_sin_vinculo
         # `None` imita a un backend viejo que todavia no informa de esto.
         self.dias_de_sesion = dias_de_sesion
         ahora = datetime.now(timezone.utc)
@@ -115,6 +138,7 @@ class BackendDeMentira:
             })
 
         contador = self.peticiones
+        recibidos = self.recibidos
         cuerpo = self._cuerpo
         testigo_bueno = self.testigo
 
@@ -125,12 +149,25 @@ class BackendDeMentira:
             def _servir(self):
                 ruta = urlparse(self.path).path
                 contador[normalizar(ruta)] += 1
-                if ruta.startswith(RUTAS_SIN_SESION):
-                    self._responder(200, cuerpo(ruta))
-                elif self._testigo() == testigo_bueno:
-                    self._responder(200, cuerpo(ruta))
+                if self.command == "POST":
+                    recibidos[ruta].append(self._leer_json())
+                if ruta.startswith(RUTAS_SIN_SESION) or self._testigo() == testigo_bueno:
+                    respuesta = cuerpo(ruta, self.command)
+                    if isinstance(respuesta, Respuesta):
+                        self._responder(respuesta.codigo, respuesta.cuerpo)
+                    else:
+                        self._responder(200, respuesta)
                 else:
                     self._responder(401, {"detail": "Necesitas entrar en tu cuenta."})
+
+            def _leer_json(self):
+                largo = int(self.headers.get("Content-Length") or 0)
+                datos = self.rfile.read(largo) if largo else b""
+                try:
+                    return json.loads(datos)
+                except ValueError:
+                    # Las subidas de audio van en multipart, no en JSON.
+                    return None
 
             def _testigo(self) -> str:
                 tipo, _, valor = self.headers.get("Authorization", "").partition(" ")
@@ -151,7 +188,21 @@ class BackendDeMentira:
         threading.Thread(target=self._servidor.serve_forever, daemon=True).start()
         self.url = f"http://127.0.0.1:{self._servidor.server_port}"
 
-    def _cuerpo(self, ruta: str):
+    def _cuerpo(self, ruta: str, metodo: str = "GET"):
+        if ruta == "/api/auth/google" and metodo == "POST":
+            if self.google_rechaza_la_vuelta:
+                return Respuesta(400, {"detail": "Ese intento de entrar con Google no vale."})
+            return {"token": self.testigo, "usuario": USUARIO}
+        if ruta == "/api/auth/google/inicio":
+            inicio = {
+                "url": f"https://accounts.google.com/o/oauth2/v2/auth?state={ESTADO}",
+                "state": ESTADO,
+                "vinculo": VINCULO,
+                "segundos": 600,
+            }
+            if self.inicio_sin_vinculo:
+                del inicio["vinculo"], inicio["segundos"]
+            return inicio
         if ruta == "/api/health":
             dias = (
                 {"dias_de_sesion": self.dias_de_sesion}
@@ -186,7 +237,11 @@ class BackendDeMentira:
         if ruta == "/api/auth/yo":
             return USUARIO
         if ruta == "/api/auth/google":
-            return {"activo": False, "client_id": "", "url_de_autorizacion": ""}
+            return {
+                "activo": self.google_activo,
+                "client_id": "cliente-de-prueba" if self.google_activo else "",
+                "url_de_autorizacion": "",
+            }
         if ruta == "/api/jobs":
             return self.trabajos
         if ruta == "/api/grupos":

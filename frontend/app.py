@@ -237,6 +237,18 @@ def _cabeceras(testigo_de_sesion: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {testigo_de_sesion}"} if testigo_de_sesion else {}
 
 
+def enlace_base() -> str:
+    """URL de la app: la de los enlaces compartidos y la de vuelta de Google.
+
+    Tiene que estar definida aqui arriba y no junto a los grupos, que es donde
+    estuvo. Streamlit ejecuta el script de arriba abajo, y la pantalla de
+    entrar —que la usa para la vuelta de Google— corre a nivel de modulo mucho
+    antes de llegar alli: entrar con Google fallaba con `NameError` en cuanto
+    se configuraba. Ningun test lo veia porque ninguno lo encendia.
+    """
+    return os.getenv("APP_URL", "http://localhost:8501").rstrip("/")
+
+
 # ---------------------------------------------------------------------------
 # Recordar la sesion entre recargas
 # ---------------------------------------------------------------------------
@@ -262,6 +274,10 @@ def _cabeceras(testigo_de_sesion: str) -> dict[str, str]:
 # desde el servidor en cualquier momento.
 
 COOKIE_DE_SESION = "keke_sesion"
+
+# El vinculo del flujo de Google: ata la vuelta de Google al navegador que
+# pulso el boton. Ver `_guion_de_ir_a_google`.
+COOKIE_DE_GOOGLE = "keke_google"
 
 # Un testigo es un `secrets.token_urlsafe`: letras, digitos, guion y guion
 # bajo, nada mas. Comprobarlo antes de escribirlo impide que un valor con `;`
@@ -303,20 +319,26 @@ def recuperar_la_sesion() -> None:
         st.session_state["sesion"] = guardado
 
 
-def _guion_de_cookie(valor: str, segundos: int) -> str:
-    """El JavaScript que pone o quita la cookie en el documento padre.
+def _poner_cookie(nombre: str, valor: str, segundos: int) -> str:
+    """La instruccion JavaScript que pone o quita una cookie del documento padre.
 
     `Secure` se decide en el navegador y no aqui porque el servidor de
     Streamlit no sabe por que esquema le llego la pagina. Poniendolo siempre,
     la cookie se perderia en `http://localhost`, que es como se usa la app hoy.
     """
-    cookie = f"{COOKIE_DE_SESION}={valor}; Max-Age={segundos}; Path=/; SameSite=Lax"
+    cookie = f"{nombre}={valor}; Max-Age={segundos}; Path=/; SameSite=Lax"
+    return (
+        " var seguro = window.parent.location.protocol === 'https:' ? '; Secure' : '';"
+        f" window.parent.document.cookie = {json.dumps(cookie)} + seguro;"
+    )
+
+
+def _guion_de_cookie(valor: str, segundos: int) -> str:
+    """El JavaScript que pone o quita la cookie de sesion."""
     return (
         "<script>(function () {"
-        " var documento = window.parent.document;"
-        " var seguro = window.parent.location.protocol === 'https:' ? '; Secure' : '';"
-        f" documento.cookie = {json.dumps(cookie)} + seguro;"
-        "})();</script>"
+        + _poner_cookie(COOKIE_DE_SESION, valor, segundos)
+        + "})();</script>"
     )
 
 
@@ -953,10 +975,19 @@ def cerrar_sesion() -> None:
 
 
 def _volver_de_google() -> None:
-    """Termina de entrar cuando Google devuelve el navegador aquí.
+    """Termina de entrar cuando Google devuelve el navegador aqui.
 
-    El código llega en la URL, así que se limpia en cuanto se canjea: no tiene
-    por qué quedarse en el historial ni viajar en un enlace copiado.
+    El codigo llega en la URL, asi que se limpia en cuanto se canjea: no tiene
+    por que quedarse en el historial ni viajar en un enlace copiado.
+
+    El vinculo sale de la cookie que se puso al pulsar el boton. Esta es una
+    carga nueva de la pagina, asi que `st.context.cookies` ya la trae. Si falta
+    —el enlace lo abrio otro navegador, o este no guarda cookies— se manda
+    vacio y es el backend quien lo rechaza: la regla vive en un solo sitio.
+
+    La cookie no se borra al terminar. Borrarla exigiria dibujar algo en esta
+    pasada, que acaba en `st.rerun()` y lo descarta; y no hace falta, porque
+    el backend gasto el estado y el vinculo ya no abre nada.
     """
     codigo = st.query_params.get("code")
     if not codigo or st.session_state.get("sesion"):
@@ -969,6 +1000,7 @@ def _volver_de_google() -> None:
             "code": codigo,
             "redirect_uri": enlace_base(),
             "state": st.query_params.get("state", ""),
+            "vinculo": _cookies_del_navegador().get(COOKIE_DE_GOOGLE, ""),
         },
     )
     st.query_params.clear()
@@ -1025,13 +1057,51 @@ def _boton_de_google() -> None:
             "POST", "/api/auth/google/inicio", json={"redirect_uri": enlace_base()}
         )
         if inicio:
-            # Se navega desde el documento padre: el componente vive en un
-            # iframe y cambiar su propia URL no movería la página.
-            components.html(
-                "<script>window.parent.location.href = "
-                f"{json.dumps(inicio['url'])};</script>",
-                height=0,
-            )
+            guion = _guion_de_ir_a_google(inicio)
+            if guion:
+                components.html(guion, height=0)
+            else:
+                st.error(
+                    "El servidor no devolvió lo necesario para entrar con "
+                    "Google. Actualiza el servidor o entra con tu correo.",
+                    icon=":material/error:",
+                )
+
+
+def _guion_de_ir_a_google(inicio: dict) -> str:
+    """Guarda el vinculo en una cookie y manda el navegador a Google.
+
+    Las dos cosas van en el mismo guion y en ese orden a proposito: si la
+    navegacion saliera antes, la pagina se iria sin haber guardado nada. En
+    un guion aparte no habria forma de asegurar cual de los dos corre primero.
+
+    La navegacion no es `window.parent.location.href = ...`, que es lo que
+    habia. Streamlit mete los componentes en un iframe con `sandbox` sin
+    `allow-top-navigation`, y Chrome bloquea que ese iframe mueva la pagina
+    entera: el boton no hacia nada, y solo se veia en la consola del
+    navegador. En su lugar se crea un enlace en el documento principal y se
+    pulsa. Un enlace navega en nombre del documento al que pertenece, que no
+    esta en el sandbox. Comprobado en Chromium; la cookie del documento padre
+    ya dependia del mismo acceso.
+
+    Devuelve vacio si la respuesta no trae un vinculo con forma de testigo. Un
+    backend viejo no lo manda, y sin vinculo el backend nuevo rechazaria la
+    vuelta de todos modos; comprobar la forma, ademas, impide que un valor con
+    `;` se invente atributos de cookie.
+    """
+    vinculo = inicio.get("vinculo", "")
+    segundos = inicio.get("segundos")
+    if not FORMA_DEL_TESTIGO.match(vinculo) or not isinstance(segundos, int):
+        return ""
+    return (
+        "<script>(function () {"
+        + _poner_cookie(COOKIE_DE_GOOGLE, vinculo, segundos)
+        + " var enlace = window.parent.document.createElement('a');"
+        f" enlace.href = {json.dumps(inicio['url'])};"
+        " window.parent.document.body.appendChild(enlace);"
+        " enlace.click();"
+        "})();</script>"
+    )
 
 
 def pantalla_de_entrada() -> None:
@@ -1938,11 +2008,6 @@ if seccion == SECCIONES[1]:
 # ---------------------------------------------------------------------------
 # Grupos: la biblioteca por materia
 # ---------------------------------------------------------------------------
-
-
-def enlace_base() -> str:
-    """URL de la app para construir los enlaces compartidos."""
-    return os.getenv("APP_URL", "http://localhost:8501").rstrip("/")
 
 
 def enlace_solo_local() -> bool:
